@@ -245,6 +245,17 @@ struct ImageXMPTests {
     }
 
     @Test
+    func subLocationRoundTrips() throws {
+        let url = try Self.makeTestJPEG(named: "sub-location")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(city: "Hood River", subLocation: "East Fork Sand"), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.city == "Hood River")
+        #expect(read.subLocation == "East Fork Sand")
+    }
+
+    @Test
     func ratingRoundTrips() throws {
         let url = try Self.makeTestJPEG(named: "rating")
         defer { try? FileManager.default.removeItem(at: url) }
@@ -262,6 +273,17 @@ struct ImageXMPTests {
         try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Green"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.label == "Green")
+    }
+
+    @Test
+    func labelColorRoundTrips() throws {
+        let url = try Self.makeTestJPEG(named: "label-color")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Orange", labelColor: "#F37500"), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.label == "Orange")
+        #expect(read.labelColor == "#F37500")
     }
 
     @Test
@@ -315,6 +337,7 @@ struct ImageXMPTests {
         #expect(metadata.country == nil)
         #expect(metadata.rating == nil)
         #expect(metadata.label == nil)
+        #expect(metadata.labelColor == nil)
         #expect(metadata.accessibilityAltText == nil)
         #expect(metadata.accessibilityDescription == nil)
     }

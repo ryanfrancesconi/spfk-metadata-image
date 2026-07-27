@@ -20,8 +20,8 @@ import SPFKBase
 /// (`dc:creator`). **Language-alternative (`rdf:Alt`) fields**: title (`dc:title`), description
 /// (`dc:description`), copyright (`dc:rights`), and the accessibility fields
 /// (`Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility`). **Plain scalar fields**: city/
-/// state/country (`photoshop:City`/`State`/`Country`), rating (`xmp:Rating`), and label
-/// (`xmp:Label`).
+/// state/country (`photoshop:City`/`State`/`Country`), rating (`xmp:Rating`), label
+/// (`xmp:Label`), and label color (`photoshop:LabelColor`).
 ///
 /// The `rdf:Alt` fields have a real crash history -- **never build an `rdf:Alt` tag with a bare
 /// path.** Original investigation (2026-07-24): writing `dc:rights` via
@@ -103,6 +103,8 @@ public enum ImageXMP {
     private static let iptcExtensionPrefix = "Iptc4xmpCore"
     private static let xmpBasicNamespace = "http://ns.adobe.com/xap/1.0/"
     private static let xmpBasicPrefix = "xmp"
+    private static let photoshopNamespace = "http://ns.adobe.com/photoshop/1.0/"
+    private static let photoshopPrefix = "photoshop"
 
     /// Reads every field this package supports in one pass (one file open, one metadata copy).
     /// See this type's doc comment for the write-side story behind each field's mechanism.
@@ -124,8 +126,10 @@ public enum ImageXMP {
             city: scalarStringValue(metadata, path: "photoshop:City"),
             state: scalarStringValue(metadata, path: "photoshop:State"),
             country: scalarStringValue(metadata, path: "photoshop:Country"),
+            subLocation: scalarStringValue(metadata, path: "Iptc4xmpCore:Location"),
             rating: scalarIntValue(metadata, path: "xmp:Rating"),
             label: scalarStringValue(metadata, path: "xmp:Label"),
+            labelColor: scalarStringValue(metadata, path: "photoshop:LabelColor"),
             accessibilityAltText: alternateTextValue(metadata, path: "Iptc4xmpCore:AltTextAccessibility"),
             accessibilityDescription: alternateTextValue(metadata, path: "Iptc4xmpCore:ExtDescrAccessibility")
         )
@@ -175,6 +179,11 @@ public enum ImageXMP {
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCountryPrimaryLocationName, value: country as CFString
             ))
         }
+        if let subLocation = metadata.subLocation {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCSubLocation, value: subLocation as CFString
+            ))
+        }
         if let rating = metadata.rating {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCStarRating, value: rating as CFNumber
@@ -184,6 +193,12 @@ public enum ImageXMP {
             writes.append(.namespacedTag(
                 namespace: xmpBasicNamespace as CFString, prefix: xmpBasicPrefix as CFString,
                 name: "Label", value: label as CFString, isAlternateText: false
+            ))
+        }
+        if let labelColor = metadata.labelColor {
+            writes.append(.namespacedTag(
+                namespace: photoshopNamespace as CFString, prefix: photoshopPrefix as CFString,
+                name: "LabelColor", value: labelColor as CFString, isAlternateText: false
             ))
         }
         if let altText = metadata.accessibilityAltText {
@@ -212,7 +227,7 @@ public enum ImageXMP {
     ///   bridge, for any field with a classic-property crosswalk (title/description/copyright/
     ///   city/state/country/rating).
     /// - `.namespacedTag` builds a tag directly under a registered namespace, for fields with no
-    ///   classic-property crosswalk at all (label, accessibility alt-text/description).
+    ///   classic-property crosswalk at all (label, label color, accessibility alt-text/description).
     ///   `isAlternateText: true` sets it at the `[x-default]`-indexed path (required for
     ///   `rdf:Alt` fields, verified crash-safe); `false` sets it at a bare path (fine for plain
     ///   scalars, since the crash was specific to bare-path *alternate-text* tags).

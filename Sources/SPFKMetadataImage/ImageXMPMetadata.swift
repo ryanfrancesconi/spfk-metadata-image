@@ -9,10 +9,20 @@ import Foundation
 ///   as the `x-default` language), backed by a classic-property crosswalk ImageIO recognizes.
 /// - `city`/`state`/`country` -- plain scalar strings (`photoshop:City`/`State`/`Country`), also
 ///   backed by a classic-property crosswalk.
+/// - `subLocation` -- plain scalar string, a finer-grained place name than `city`/`state`/
+///   `country` (e.g. a neighborhood or landmark). Backed by the classic IPTC `SubLocation`
+///   crosswalk (`kCGImagePropertyIPTCSubLocation`), verified (2026-07-27) to read/write at XMP
+///   path `Iptc4xmpCore:Location` -- not `photoshop:Location`, the namespace `city`/`state`/
+///   `country` use, despite going through the same classic-property bridge mechanism.
 /// - `rating` -- plain scalar number (`xmp:Rating`, 0-5), backed by a classic-property crosswalk
 ///   (`kCGImagePropertyIPTCStarRating`).
 /// - `label` -- plain scalar string (`xmp:Label`) -- no classic-property crosswalk exists for
 ///   this field, so it's written directly under the `xmp:` namespace.
+/// - `labelColor` -- plain scalar string (`photoshop:LabelColor`, a hex swatch e.g. `"#F37500"`)
+///   -- Lightroom's "Custom Color" label option, which sits in the same picker as its five preset
+///   named labels (Red/Yellow/Green/Blue/Purple) but additionally carries an arbitrary swatch;
+///   `label` still carries the user-facing name either way. No classic-property crosswalk exists,
+///   written directly under the `photoshop:` namespace like `label` is under `xmp:`.
 /// - `accessibilityAltText`/`accessibilityDescription` -- language-alternative
 ///   (`Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility`) -- no classic-property
 ///   crosswalk exists for these either (they're IPTC Extension fields newer than ImageIO's
@@ -31,8 +41,10 @@ public struct ImageXMPMetadata: Hashable, Sendable {
     public var city: String?
     public var state: String?
     public var country: String?
+    public var subLocation: String?
     public var rating: Int?
     public var label: String?
+    public var labelColor: String?
     public var accessibilityAltText: String?
     public var accessibilityDescription: String?
 
@@ -45,8 +57,10 @@ public struct ImageXMPMetadata: Hashable, Sendable {
         city: String? = nil,
         state: String? = nil,
         country: String? = nil,
+        subLocation: String? = nil,
         rating: Int? = nil,
         label: String? = nil,
+        labelColor: String? = nil,
         accessibilityAltText: String? = nil,
         accessibilityDescription: String? = nil
     ) {
@@ -58,8 +72,10 @@ public struct ImageXMPMetadata: Hashable, Sendable {
         self.city = city
         self.state = state
         self.country = country
+        self.subLocation = subLocation
         self.rating = rating
         self.label = label
+        self.labelColor = labelColor
         self.accessibilityAltText = accessibilityAltText
         self.accessibilityDescription = accessibilityDescription
     }
