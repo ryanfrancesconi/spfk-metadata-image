@@ -221,4 +221,101 @@ struct ImageXMPTests {
         #expect(read.title == "A Title")
         #expect(read.description == "A Description")
     }
+
+    @Test
+    func copyrightRoundTrips() throws {
+        let url = try Self.makeTestJPEG(named: "copyright")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(copyright: "© 2026 Test"), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.copyright == "© 2026 Test")
+    }
+
+    @Test
+    func locationFieldsRoundTrip() throws {
+        let url = try Self.makeTestJPEG(named: "location")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(city: "Hood River", state: "Oregon", country: "USA"), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.city == "Hood River")
+        #expect(read.state == "Oregon")
+        #expect(read.country == "USA")
+    }
+
+    @Test
+    func ratingRoundTrips() throws {
+        let url = try Self.makeTestJPEG(named: "rating")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(rating: 4), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.rating == 4)
+    }
+
+    @Test
+    func labelRoundTrips() throws {
+        let url = try Self.makeTestJPEG(named: "label")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Green"), url: url)
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.label == "Green")
+    }
+
+    @Test
+    func accessibilityFieldsRoundTrip() throws {
+        let url = try Self.makeTestJPEG(named: "accessibility")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(
+            ImageXMPMetadata(accessibilityAltText: "A cyclist on a gravel path", accessibilityDescription: "Extended accessibility description"),
+            url: url
+        )
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.accessibilityAltText == "A cyclist on a gravel path")
+        #expect(read.accessibilityDescription == "Extended accessibility description")
+    }
+
+    @Test
+    func newFieldsDoNotClobberExistingFields() throws {
+        let url = try Self.makeTestJPEG(named: "new-fields-no-clobber")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(
+            ImageXMPMetadata(keywords: ["bike"], creators: ["Ryan"], title: "T", description: "D"),
+            url: url
+        )
+        try ImageXMP.writeMetadata(
+            ImageXMPMetadata(copyright: "© 2026", city: "Hood River", rating: 5, label: "Red"),
+            url: url
+        )
+
+        let read = try ImageXMP.readMetadata(from: url)
+        #expect(read.keywords == ["bike"])
+        #expect(read.creators == ["Ryan"])
+        #expect(read.title == "T")
+        #expect(read.description == "D")
+        #expect(read.copyright == "© 2026")
+        #expect(read.city == "Hood River")
+        #expect(read.rating == 5)
+        #expect(read.label == "Red")
+    }
+
+    @Test
+    func freshFileHasNilForAllNewFields() throws {
+        let url = try Self.makeTestJPEG(named: "fresh-new-fields")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let metadata = try ImageXMP.readMetadata(from: url)
+        #expect(metadata.copyright == nil)
+        #expect(metadata.city == nil)
+        #expect(metadata.state == nil)
+        #expect(metadata.country == nil)
+        #expect(metadata.rating == nil)
+        #expect(metadata.label == nil)
+        #expect(metadata.accessibilityAltText == nil)
+        #expect(metadata.accessibilityDescription == nil)
+    }
 }

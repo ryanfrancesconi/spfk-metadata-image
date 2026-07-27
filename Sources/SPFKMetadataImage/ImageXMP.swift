@@ -17,27 +17,50 @@ import SPFKBase
 /// support well (JPEG, TIFF-based RAW, and its original audio/video Dynamic Media use case).
 ///
 /// **Array-typed (`rdf:Bag`/`rdf:Seq`) fields**: keywords (`dc:subject`) and creators
-/// (`dc:creator`). **Language-alternative (`rdf:Alt`) fields**: title (`dc:title`) and
-/// description (`dc:description`).
+/// (`dc:creator`). **Language-alternative (`rdf:Alt`) fields**: title (`dc:title`), description
+/// (`dc:description`), copyright (`dc:rights`), and the accessibility fields
+/// (`Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility`). **Plain scalar fields**: city/
+/// state/country (`photoshop:City`/`State`/`Country`), rating (`xmp:Rating`), and label
+/// (`xmp:Label`).
 ///
-/// The `rdf:Alt` fields have a real crash history, so their write path is deliberately
-/// different from the array fields' -- **never build an `rdf:Alt` tag by hand.** Original
-/// investigation (2026-07-24): writing `dc:rights` via `CGImageMetadataTagCreate(...,
-/// .alternateText, ...)` + `CGImageMetadataSetTagWithPath` **crashed the process** with
+/// The `rdf:Alt` fields have a real crash history -- **never build an `rdf:Alt` tag with a bare
+/// path.** Original investigation (2026-07-24): writing `dc:rights` via
+/// `CGImageMetadataTagCreate(..., .alternateText, ...)` + `CGImageMetadataSetTagWithPath(...,
+/// "dc:rights", ...)` (a bare path, no language index) **crashed the process** with
 /// `-[Swift.__StringStorage count]: unrecognized selector sent to instance` on a real, untouched
 /// iPhone HEIC file, despite passing reliably against synthetic JPEG fixtures every time --
 /// `dc:title`/`dc:description` round-tripped unreliably the same way (correct in one specific
-/// field combination tested, `nil` in every other). Root cause traced (2026-07-27) to that
-/// specific call sequence, not to `rdf:Alt` fields being unsafe in general: switching to the
-/// higher-level `CGImageMetadataSetValueMatchingImageProperty(metadata, kCGImagePropertyIPTC
-/// Dictionary, kCGImagePropertyIPTCObjectName/CaptionAbstract, value)` bridge -- which builds
-/// the same `rdf:Alt`/`xml:lang=x-default` structure internally -- verified crash-free and
-/// round-trip-correct for title, description, *and* `dc:rights` against a real, metadata-rich
-/// iPhone HEIC (existing `dc:subject`/`dc:creator`/GPS/EXIF/MakerApple all preserved across the
-/// write). `dc:rights` isn't exposed in `ImageXMPMetadata` since nothing needs it yet, but the
-/// finding confirms the bridge API is the safe entry point for this whole field class -- don't
-/// add another `rdf:Alt` field via direct `CGImageMetadataTagCreate(..., .alternateText, ...)`
-/// construction; go through the property bridge instead.
+/// field combination tested, `nil` in every other).
+///
+/// **Root cause found (2026-07-27), and it's the bare path, not the `.alternateText` type or
+/// hand-building in general:** ImageIO's `CGImageMetadataCopyTagWithPath` documentation
+/// describes alternate-text array elements as accessed by RFC 3066 language code in brackets --
+/// e.g. `"dc:description[x-default]"` -- the same way array elements use `[0]`. Setting a tag at
+/// the *bare* path (`"dc:rights"`) instead of the language-indexed path
+/// (`"dc:rights[x-default]"`) is what crashed; setting the identical `.default`-type tag at the
+/// `[x-default]`-indexed path works correctly and safely, verified (2026-07-27) against the
+/// exact same real HEIC that reproduced the original crash, for `dc:rights` *and* a brand-new
+/// custom namespace (`Iptc4xmpCore:AltTextAccessibility`) with no classic-property crosswalk at
+/// all -- both wrote, read back correctly, and preserved existing `dc:subject`/`dc:creator`.
+///
+/// Two safe write mechanisms follow from this, used depending on whether ImageIO recognizes a
+/// classic-property crosswalk for the field:
+/// - **Classic-property bridge** (`CGImageMetadataSetValueMatchingImageProperty`) for fields
+///   ImageIO's `CGImageProperties.h` exposes a classic IPTC dictionary key for: title,
+///   description, copyright (`kCGImagePropertyIPTCObjectName`/`CaptionAbstract`/
+///   `CopyrightNotice`), city/state/country (`kCGImagePropertyIPTCCity`/`ProvinceState`/
+///   `CountryPrimaryLocationName`), and rating (`kCGImagePropertyIPTCStarRating`). This bridge
+///   builds whichever internal structure is correct (`rdf:Alt` or a plain scalar) automatically.
+/// - **`[x-default]`-indexed path** for fields with no classic-property crosswalk at all --
+///   `Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility` (IPTC Extension fields newer
+///   than ImageIO's classic-dictionary bridge, confirmed absent from `CGImageProperties.h` by
+///   direct header inspection) and `xmp:Label` (a plain scalar, no `rdf:Alt` involved, so no
+///   indexed path needed there -- just a namespaced tag at a bare path, which is safe for
+///   non-alternate-text fields; the crash was specific to bare-path *alternate-text* tags).
+///
+/// Don't add another `rdf:Alt` field via a bare-path `CGImageMetadataSetTagWithPath` call --
+/// always use the bridge if a classic-property crosswalk exists, or the `[x-default]`-indexed
+/// path if it doesn't.
 public enum ImageXMP {
     public enum ImageXMPError: Error, CustomStringConvertible {
         case sourceCreationFailed(URL)
@@ -76,9 +99,13 @@ public enum ImageXMP {
 
     // MARK: - Full metadata read
 
-    /// Reads the Dublin Core fields this package supports in one pass (one file open, one
-    /// metadata copy) -- keywords (`dc:subject`), creators (`dc:creator`), title (`dc:title`),
-    /// and description (`dc:description`).
+    private static let iptcExtensionNamespace = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
+    private static let iptcExtensionPrefix = "Iptc4xmpCore"
+    private static let xmpBasicNamespace = "http://ns.adobe.com/xap/1.0/"
+    private static let xmpBasicPrefix = "xmp"
+
+    /// Reads every field this package supports in one pass (one file open, one metadata copy).
+    /// See this type's doc comment for the write-side story behind each field's mechanism.
     public static func readMetadata(from url: URL) throws -> ImageXMPMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
@@ -92,7 +119,15 @@ public enum ImageXMP {
             keywords: arrayValue(metadata, path: "dc:subject"),
             creators: arrayValue(metadata, path: "dc:creator"),
             title: alternateTextValue(metadata, path: "dc:title"),
-            description: alternateTextValue(metadata, path: "dc:description")
+            description: alternateTextValue(metadata, path: "dc:description"),
+            copyright: alternateTextValue(metadata, path: "dc:rights"),
+            city: scalarStringValue(metadata, path: "photoshop:City"),
+            state: scalarStringValue(metadata, path: "photoshop:State"),
+            country: scalarStringValue(metadata, path: "photoshop:Country"),
+            rating: scalarIntValue(metadata, path: "xmp:Rating"),
+            label: scalarStringValue(metadata, path: "xmp:Label"),
+            accessibilityAltText: alternateTextValue(metadata, path: "Iptc4xmpCore:AltTextAccessibility"),
+            accessibilityDescription: alternateTextValue(metadata, path: "Iptc4xmpCore:ExtDescrAccessibility")
         )
     }
 
@@ -120,20 +155,71 @@ public enum ImageXMP {
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCaptionAbstract, value: description as CFString
             ))
         }
+        if let copyright = metadata.copyright {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCopyrightNotice, value: copyright as CFString
+            ))
+        }
+        if let city = metadata.city {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCity, value: city as CFString
+            ))
+        }
+        if let state = metadata.state {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCProvinceState, value: state as CFString
+            ))
+        }
+        if let country = metadata.country {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCountryPrimaryLocationName, value: country as CFString
+            ))
+        }
+        if let rating = metadata.rating {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCStarRating, value: rating as CFNumber
+            ))
+        }
+        if let label = metadata.label {
+            writes.append(.namespacedTag(
+                namespace: xmpBasicNamespace as CFString, prefix: xmpBasicPrefix as CFString,
+                name: "Label", value: label as CFString, isAlternateText: false
+            ))
+        }
+        if let altText = metadata.accessibilityAltText {
+            writes.append(.namespacedTag(
+                namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
+                name: "AltTextAccessibility", value: altText as CFString, isAlternateText: true
+            ))
+        }
+        if let extendedDescription = metadata.accessibilityDescription {
+            writes.append(.namespacedTag(
+                namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
+                name: "ExtDescrAccessibility", value: extendedDescription as CFString, isAlternateText: true
+            ))
+        }
 
         try writeTags(writes, url: url)
     }
 
     // MARK: - Private
 
-    /// Two different write mechanisms, not one -- `.array` builds a custom-namespaced tag by
-    /// hand (`CGImageMetadataTagCreate` + `CGImageMetadataSetTagWithPath`), the only safe way
-    /// found for `rdf:Bag`/`rdf:Seq` fields. `.scalarProperty` goes through the higher-level
-    /// `CGImageMetadataSetValueMatchingImageProperty` bridge instead -- the only verified-safe
-    /// way to write `rdf:Alt` fields, see this file's doc comment for the crash history.
+    /// Three write mechanisms, chosen per-field -- see this file's doc comment for why each one
+    /// exists and the crash history behind the distinction:
+    /// - `.array` builds a `dc:`-namespaced tag by hand, the only safe way found for
+    ///   `rdf:Bag`/`rdf:Seq` fields (keywords/creators).
+    /// - `.scalarProperty` goes through the `CGImageMetadataSetValueMatchingImageProperty`
+    ///   bridge, for any field with a classic-property crosswalk (title/description/copyright/
+    ///   city/state/country/rating).
+    /// - `.namespacedTag` builds a tag directly under a registered namespace, for fields with no
+    ///   classic-property crosswalk at all (label, accessibility alt-text/description).
+    ///   `isAlternateText: true` sets it at the `[x-default]`-indexed path (required for
+    ///   `rdf:Alt` fields, verified crash-safe); `false` sets it at a bare path (fine for plain
+    ///   scalars, since the crash was specific to bare-path *alternate-text* tags).
     private enum MetadataWrite {
         case array(name: String, type: CGImageMetadataType, value: CFArray)
-        case scalarProperty(dictionary: CFString, property: CFString, value: CFString)
+        case scalarProperty(dictionary: CFString, property: CFString, value: CFTypeRef)
+        case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, isAlternateText: Bool)
     }
 
     /// Handles both `rdf:Bag` (unordered, e.g. `dc:subject`) and `rdf:Seq` (ordered, e.g.
@@ -175,6 +261,25 @@ public enum ImageXMP {
         return value as? String
     }
 
+    /// Reads a plain (non-alternate-text) scalar string field -- `photoshop:City`/`State`/
+    /// `Country`, `xmp:Label`. These come back as a bare `String`, not array-wrapped like the
+    /// array or alternate-text fields.
+    private static func scalarStringValue(_ metadata: CGImageMetadata, path: String) -> String? {
+        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString) else { return nil }
+        return CGImageMetadataTagCopyValue(tag) as? String
+    }
+
+    /// Reads a plain scalar integer field -- `xmp:Rating`.
+    private static func scalarIntValue(_ metadata: CGImageMetadata, path: String) -> Int? {
+        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
+              let value = CGImageMetadataTagCopyValue(tag)
+        else { return nil }
+
+        if let number = value as? NSNumber { return number.intValue }
+        if let string = value as? String { return Int(string) }
+        return nil
+    }
+
     /// Shared write path for `setKeywords`/`writeMetadata`: builds a mutable metadata object
     /// from `writes`, then merges it onto the file via `kCGImageDestinationMergeMetadata` --
     /// preserving all other existing metadata (EXIF, other XMP fields), not a wholesale
@@ -193,7 +298,9 @@ public enum ImageXMP {
         let metadata = CGImageMetadataCreateMutable()
 
         // Namespace registration is only needed for the manual `CGImageMetadataTagCreate` path
-        // `.array` uses -- `.scalarProperty`'s bridge API already knows the `dc:` namespace.
+        // `.array`/`.namespacedTag` use -- `.scalarProperty`'s bridge API already knows the
+        // namespace for any classic property it recognizes. Each unique (namespace, prefix) is
+        // only registered once, even if used by multiple `.namespacedTag` writes.
         if writes.contains(where: { if case .array = $0 { true } else { false } }) {
             var registrationError: Unmanaged<CFError>?
             guard CGImageMetadataRegisterNamespaceForPrefix(
@@ -203,6 +310,7 @@ public enum ImageXMP {
             }
         }
 
+        var registeredPrefixes: Set<String> = []
         for write in writes {
             switch write {
             case let .array(name, type, value):
@@ -218,6 +326,25 @@ public enum ImageXMP {
 
             case let .scalarProperty(dictionary, property, value):
                 guard CGImageMetadataSetValueMatchingImageProperty(metadata, dictionary, property, value) else {
+                    throw ImageXMPError.writeFailed(url, underlying: nil)
+                }
+
+            case let .namespacedTag(namespace, prefix, name, value, isAlternateText):
+                let prefixString = prefix as String
+                if !registeredPrefixes.contains(prefixString) {
+                    var registrationError: Unmanaged<CFError>?
+                    guard CGImageMetadataRegisterNamespaceForPrefix(metadata, namespace, prefix, &registrationError) else {
+                        throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
+                    }
+                    registeredPrefixes.insert(prefixString)
+                }
+
+                guard let cgTag = CGImageMetadataTagCreate(namespace, prefix, name as CFString, .default, value) else {
+                    throw ImageXMPError.writeFailed(url, underlying: nil)
+                }
+
+                let path = isAlternateText ? "\(prefixString):\(name)[x-default]" : "\(prefixString):\(name)"
+                guard CGImageMetadataSetTagWithPath(metadata, nil, path as CFString, cgTag) else {
                     throw ImageXMPError.writeFailed(url, underlying: nil)
                 }
             }
@@ -248,30 +375,5 @@ public enum ImageXMP {
         } catch {
             throw ImageXMPError.writeFailed(url, underlying: error)
         }
-    }
-}
-
-/// Dublin Core fields `ImageXMP` reads/writes -- `dc:subject`/`dc:creator` are array-typed
-/// (`rdf:Bag`/`rdf:Seq`); `title`/`description` are language-alternative (`rdf:Alt`, always
-/// written/read as the `x-default` language). `nil` title/description means the field isn't
-/// present on the file, distinct from an empty string. See `ImageXMP`'s doc comment for the
-/// crash history behind why `rdf:Alt` fields go through a different write path than the array
-/// ones, and why `dc:rights` still isn't exposed here despite being verified safe too.
-public struct ImageXMPMetadata: Hashable, Sendable {
-    public var keywords: [String]
-    public var creators: [String]
-    public var title: String?
-    public var description: String?
-
-    public init(
-        keywords: [String] = [],
-        creators: [String] = [],
-        title: String? = nil,
-        description: String? = nil
-    ) {
-        self.keywords = keywords
-        self.creators = creators
-        self.title = title
-        self.description = description
     }
 }
