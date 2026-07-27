@@ -16,19 +16,28 @@ import SPFKBase
 /// `spfk-metadata-xmp` remains the right tool for formats its Adobe SDK format handlers do
 /// support well (JPEG, TIFF-based RAW, and its original audio/video Dynamic Media use case).
 ///
-/// **Only array-typed (`rdf:Bag`/`rdf:Seq`) fields are supported** -- keywords (`dc:subject`)
-/// and creators (`dc:creator`). Language-alternative (`rdf:Alt`) fields -- `dc:title`,
-/// `dc:description`, `dc:rights` -- are deliberately not exposed here: investigated (2026-07-24)
-/// and found unsafe. `dc:title`/`dc:description` round-tripped unreliably (correct in one
-/// specific field combination tested, `nil` in every other). `dc:rights` went further --
-/// writing it alone via `CGImageMetadataTagCreate(..., .alternateText, ...)` **crashed the
-/// process** with `-[Swift.__StringStorage count]: unrecognized selector sent to instance` on a
-/// real, untouched iPhone HEIC file, despite passing reliably against simple synthetic JPEG
-/// test fixtures every time -- confirming the risk is specific to richer, real-world files, not
-/// something the synthetic-fixture test suite alone would have caught. Every array-typed field
-/// tested has been reliable and crash-free across both synthetic and real files; every
-/// alternate-text field tested has not. Don't add another `.alternateText` field here without
-/// new evidence this is fixed.
+/// **Array-typed (`rdf:Bag`/`rdf:Seq`) fields**: keywords (`dc:subject`) and creators
+/// (`dc:creator`). **Language-alternative (`rdf:Alt`) fields**: title (`dc:title`) and
+/// description (`dc:description`).
+///
+/// The `rdf:Alt` fields have a real crash history, so their write path is deliberately
+/// different from the array fields' -- **never build an `rdf:Alt` tag by hand.** Original
+/// investigation (2026-07-24): writing `dc:rights` via `CGImageMetadataTagCreate(...,
+/// .alternateText, ...)` + `CGImageMetadataSetTagWithPath` **crashed the process** with
+/// `-[Swift.__StringStorage count]: unrecognized selector sent to instance` on a real, untouched
+/// iPhone HEIC file, despite passing reliably against synthetic JPEG fixtures every time --
+/// `dc:title`/`dc:description` round-tripped unreliably the same way (correct in one specific
+/// field combination tested, `nil` in every other). Root cause traced (2026-07-27) to that
+/// specific call sequence, not to `rdf:Alt` fields being unsafe in general: switching to the
+/// higher-level `CGImageMetadataSetValueMatchingImageProperty(metadata, kCGImagePropertyIPTC
+/// Dictionary, kCGImagePropertyIPTCObjectName/CaptionAbstract, value)` bridge -- which builds
+/// the same `rdf:Alt`/`xml:lang=x-default` structure internally -- verified crash-free and
+/// round-trip-correct for title, description, *and* `dc:rights` against a real, metadata-rich
+/// iPhone HEIC (existing `dc:subject`/`dc:creator`/GPS/EXIF/MakerApple all preserved across the
+/// write). `dc:rights` isn't exposed in `ImageXMPMetadata` since nothing needs it yet, but the
+/// finding confirms the bridge API is the safe entry point for this whole field class -- don't
+/// add another `rdf:Alt` field via direct `CGImageMetadataTagCreate(..., .alternateText, ...)`
+/// construction; go through the property bridge instead.
 public enum ImageXMP {
     public enum ImageXMPError: Error, CustomStringConvertible {
         case sourceCreationFailed(URL)
@@ -62,15 +71,14 @@ public enum ImageXMP {
 
     /// Replaces the whole `dc:subject` keyword set, preserving all other existing metadata.
     public static func setKeywords(_ keywords: [String], url: URL) throws {
-        try writeTags([Tag(name: "subject", type: .arrayUnordered, value: keywords as CFArray)], url: url)
+        try writeTags([.array(name: "subject", type: .arrayUnordered, value: keywords as CFArray)], url: url)
     }
 
     // MARK: - Full metadata read
 
-    /// Reads the array-typed Dublin Core fields this package supports in one pass (one file
-    /// open, one metadata copy) -- keywords (`dc:subject`) and creators (`dc:creator`). See this
-    /// type's doc comment for why language-alternative fields (title/description/rights) aren't
-    /// here.
+    /// Reads the Dublin Core fields this package supports in one pass (one file open, one
+    /// metadata copy) -- keywords (`dc:subject`), creators (`dc:creator`), title (`dc:title`),
+    /// and description (`dc:description`).
     public static func readMetadata(from url: URL) throws -> ImageXMPMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
@@ -82,34 +90,50 @@ public enum ImageXMP {
 
         return ImageXMPMetadata(
             keywords: arrayValue(metadata, path: "dc:subject"),
-            creators: arrayValue(metadata, path: "dc:creator")
+            creators: arrayValue(metadata, path: "dc:creator"),
+            title: alternateTextValue(metadata, path: "dc:title"),
+            description: alternateTextValue(metadata, path: "dc:description")
         )
     }
 
-    /// Writes every non-empty field in `metadata`, preserving everything else already on the
-    /// file (`[]` means "leave the existing value alone," not "clear it" -- there's no
+    /// Writes every non-empty/non-nil field in `metadata`, preserving everything else already on
+    /// the file (`[]`/`nil` means "leave the existing value alone," not "clear it" -- there's no
     /// clear-a-field operation yet since nothing in TorchTag calls this today; editing is
     /// deferred until the Content store exists, see `torchtag-xmp-keywords-plan.md`). This
     /// exists for round-trip testing and package completeness, matching how `setKeywords`
     /// existed before any UI used it.
     public static func writeMetadata(_ metadata: ImageXMPMetadata, url: URL) throws {
-        var tags: [Tag] = []
+        var writes: [MetadataWrite] = []
         if metadata.keywords.isNotEmpty {
-            tags.append(Tag(name: "subject", type: .arrayUnordered, value: metadata.keywords as CFArray))
+            writes.append(.array(name: "subject", type: .arrayUnordered, value: metadata.keywords as CFArray))
         }
         if metadata.creators.isNotEmpty {
-            tags.append(Tag(name: "creator", type: .arrayOrdered, value: metadata.creators as CFArray))
+            writes.append(.array(name: "creator", type: .arrayOrdered, value: metadata.creators as CFArray))
+        }
+        if let title = metadata.title {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCObjectName, value: title as CFString
+            ))
+        }
+        if let description = metadata.description {
+            writes.append(.scalarProperty(
+                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCaptionAbstract, value: description as CFString
+            ))
         }
 
-        try writeTags(tags, url: url)
+        try writeTags(writes, url: url)
     }
 
     // MARK: - Private
 
-    private struct Tag {
-        let name: String
-        let type: CGImageMetadataType
-        let value: CFTypeRef
+    /// Two different write mechanisms, not one -- `.array` builds a custom-namespaced tag by
+    /// hand (`CGImageMetadataTagCreate` + `CGImageMetadataSetTagWithPath`), the only safe way
+    /// found for `rdf:Bag`/`rdf:Seq` fields. `.scalarProperty` goes through the higher-level
+    /// `CGImageMetadataSetValueMatchingImageProperty` bridge instead -- the only verified-safe
+    /// way to write `rdf:Alt` fields, see this file's doc comment for the crash history.
+    private enum MetadataWrite {
+        case array(name: String, type: CGImageMetadataType, value: CFArray)
+        case scalarProperty(dictionary: CFString, property: CFString, value: CFString)
     }
 
     /// Handles both `rdf:Bag` (unordered, e.g. `dc:subject`) and `rdf:Seq` (ordered, e.g.
@@ -135,14 +159,29 @@ public enum ImageXMP {
         return []
     }
 
+    /// Reads an `rdf:Alt` (language-alternative) field -- `dc:title`/`dc:description`. Comes
+    /// back from `CGImageMetadataTagCopyValue` the same shape as the array fields (an array of
+    /// nested `CGImageMetadataTag` objects, one per language, verified via this package's real-
+    /// file spike), so the first entry (the `x-default` language, the only one this package
+    /// ever writes) is what a caller wants.
+    private static func alternateTextValue(_ metadata: CGImageMetadata, path: String) -> String? {
+        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
+              let value = CGImageMetadataTagCopyValue(tag)
+        else { return nil }
+
+        if let tags = value as? [CGImageMetadataTag] {
+            return tags.compactMap { CGImageMetadataTagCopyValue($0) as? String }.first
+        }
+        return value as? String
+    }
+
     /// Shared write path for `setKeywords`/`writeMetadata`: builds a mutable metadata object
-    /// with `tags` (all in the `dc:` namespace), then merges it onto the file via
-    /// `kCGImageDestinationMergeMetadata` -- preserving all other existing metadata (EXIF,
-    /// other XMP fields), not a wholesale replacement. Writes to a temporary file in the same
-    /// directory as `url`, then atomically replaces the original via `FileManager.
-    /// replaceItemAt` -- never partially overwrites the original in place, so a failure or
-    /// crash mid-write can't corrupt it.
-    private static func writeTags(_ tags: [Tag], url: URL) throws {
+    /// from `writes`, then merges it onto the file via `kCGImageDestinationMergeMetadata` --
+    /// preserving all other existing metadata (EXIF, other XMP fields), not a wholesale
+    /// replacement. Writes to a temporary file in the same directory as `url`, then atomically
+    /// replaces the original via `FileManager.replaceItemAt` -- never partially overwrites the
+    /// original in place, so a failure or crash mid-write can't corrupt it.
+    private static func writeTags(_ writes: [MetadataWrite], url: URL) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
         }
@@ -153,22 +192,34 @@ public enum ImageXMP {
 
         let metadata = CGImageMetadataCreateMutable()
 
-        var registrationError: Unmanaged<CFError>?
-        guard CGImageMetadataRegisterNamespaceForPrefix(
-            metadata, dublinCoreNamespace as CFString, dublinCorePrefix as CFString, &registrationError
-        ) else {
-            throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
+        // Namespace registration is only needed for the manual `CGImageMetadataTagCreate` path
+        // `.array` uses -- `.scalarProperty`'s bridge API already knows the `dc:` namespace.
+        if writes.contains(where: { if case .array = $0 { true } else { false } }) {
+            var registrationError: Unmanaged<CFError>?
+            guard CGImageMetadataRegisterNamespaceForPrefix(
+                metadata, dublinCoreNamespace as CFString, dublinCorePrefix as CFString, &registrationError
+            ) else {
+                throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
+            }
         }
 
-        for tag in tags {
-            guard let cgTag = CGImageMetadataTagCreate(
-                dublinCoreNamespace as CFString, dublinCorePrefix as CFString, tag.name as CFString, tag.type, tag.value
-            ) else {
-                throw ImageXMPError.writeFailed(url, underlying: nil)
-            }
+        for write in writes {
+            switch write {
+            case let .array(name, type, value):
+                guard let cgTag = CGImageMetadataTagCreate(
+                    dublinCoreNamespace as CFString, dublinCorePrefix as CFString, name as CFString, type, value
+                ) else {
+                    throw ImageXMPError.writeFailed(url, underlying: nil)
+                }
 
-            guard CGImageMetadataSetTagWithPath(metadata, nil, "dc:\(tag.name)" as CFString, cgTag) else {
-                throw ImageXMPError.writeFailed(url, underlying: nil)
+                guard CGImageMetadataSetTagWithPath(metadata, nil, "dc:\(name)" as CFString, cgTag) else {
+                    throw ImageXMPError.writeFailed(url, underlying: nil)
+                }
+
+            case let .scalarProperty(dictionary, property, value):
+                guard CGImageMetadataSetValueMatchingImageProperty(metadata, dictionary, property, value) else {
+                    throw ImageXMPError.writeFailed(url, underlying: nil)
+                }
             }
         }
 
@@ -200,18 +251,27 @@ public enum ImageXMP {
     }
 }
 
-/// Array-typed Dublin Core fields `ImageXMP` reads/writes -- `dc:subject` is an unordered
-/// `rdf:Bag`, `dc:creator` an ordered `rdf:Seq`. See `ImageXMP`'s doc comment for why
-/// language-alternative fields (title/description/rights) are deliberately not here.
+/// Dublin Core fields `ImageXMP` reads/writes -- `dc:subject`/`dc:creator` are array-typed
+/// (`rdf:Bag`/`rdf:Seq`); `title`/`description` are language-alternative (`rdf:Alt`, always
+/// written/read as the `x-default` language). `nil` title/description means the field isn't
+/// present on the file, distinct from an empty string. See `ImageXMP`'s doc comment for the
+/// crash history behind why `rdf:Alt` fields go through a different write path than the array
+/// ones, and why `dc:rights` still isn't exposed here despite being verified safe too.
 public struct ImageXMPMetadata: Hashable, Sendable {
     public var keywords: [String]
     public var creators: [String]
+    public var title: String?
+    public var description: String?
 
     public init(
         keywords: [String] = [],
-        creators: [String] = []
+        creators: [String] = [],
+        title: String? = nil,
+        description: String? = nil
     ) {
         self.keywords = keywords
         self.creators = creators
+        self.title = title
+        self.description = description
     }
 }
