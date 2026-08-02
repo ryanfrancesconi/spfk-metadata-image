@@ -22,7 +22,7 @@ let keywords = try ImageXMP.keywords(from: imageURL)  // [String], [] if none
 try ImageXMP.setKeywords(["mountains", "california", "sunset"], url: imageURL)
 
 let metadata = try ImageXMP.readMetadata(from: imageURL)  // keywords, creators
-try ImageXMP.writeMetadata(ImageXMPMetadata(creators: ["Ryan Francesconi"]), url: imageURL)
+try ImageXMP.writeMetadata(XMPMetadata(creators: ["Ryan Francesconi"]), url: imageURL)
 ```
 
 Writes replace the given field(s) wholesale (not additive) while preserving everything else already on the file (EXIF, other XMP fields) via `kCGImageDestinationMergeMetadata`, verified by a test that checks a pre-existing EXIF field survives a write unchanged. Writes go to a temporary file in the same directory, then atomically replace the original via `FileManager.replaceItemAt` — a failure or crash mid-write can't corrupt the original file.

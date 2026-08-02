@@ -2,16 +2,16 @@
 
 import Foundation
 
-/// One writable field of ``ImageXMPMetadata``, identified by its XMP path.
+/// One writable field of ``XMPMetadata``, identified by its XMP path.
 ///
 /// Exists so a caller can say "empty this field" as distinct from "leave it alone", which
-/// ``ImageXMPMetadata`` alone cannot express: `nil`/`[]` there means "no new value", and an editor
+/// ``XMPMetadata`` alone cannot express: `nil`/`[]` there means "no new value", and an editor
 /// needs both meanings the moment a user can clear a text field.
 ///
 /// `path` is the same path the corresponding read in `ImageXMP.readMetadata(from:)` uses -- kept
 /// alongside the case so the two cannot drift, since a clear that targets a different path than
 /// the read looks exactly like the clear silently not working.
-public enum ImageXMPField: String, Sendable, CaseIterable {
+public enum XMPField: String, Sendable, CaseIterable {
     case keywords
     case creators
     case title

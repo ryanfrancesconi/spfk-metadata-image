@@ -125,7 +125,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "full-metadata")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let written = ImageXMPMetadata(
+        let written = XMPMetadata(
             keywords: ["mountains", "california"],
             creators: ["Ryan Francesconi"]
         )
@@ -142,7 +142,7 @@ struct ImageXMPTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let creators = ["First Photographer", "Second Photographer", "Third Photographer"]
-        try ImageXMP.writeMetadata(ImageXMPMetadata(creators: creators), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(creators: creators), url: url)
 
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.creators == creators)
@@ -154,7 +154,7 @@ struct ImageXMPTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.setKeywords(["original-keyword"], url: url)
-        try ImageXMP.writeMetadata(ImageXMPMetadata(creators: ["New creator only"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(creators: ["New creator only"]), url: url)
 
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.creators == ["New creator only"])
@@ -175,7 +175,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "real-file-safety")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(keywords: ["a"], creators: ["b"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["a"], creators: ["b"]), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.keywords == ["a"])
         #expect(read.creators == ["b"])
@@ -186,7 +186,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "title-description")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let written = ImageXMPMetadata(title: "A Test Title", description: "A test description.")
+        let written = XMPMetadata(title: "A Test Title", description: "A test description.")
         try ImageXMP.writeMetadata(written, url: url)
 
         let read = try ImageXMP.readMetadata(from: url)
@@ -211,7 +211,7 @@ struct ImageXMPTests {
 
         try ImageXMP.setKeywords(["mountains"], url: url)
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(creators: ["Ryan Francesconi"], title: "A Title", description: "A Description"),
+            XMPMetadata(creators: ["Ryan Francesconi"], title: "A Title", description: "A Description"),
             url: url
         )
 
@@ -227,7 +227,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "copyright")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(copyright: "© 2026 Test"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(copyright: "© 2026 Test"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.copyright == "© 2026 Test")
     }
@@ -237,7 +237,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "location")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(city: "Hood River", state: "Oregon", country: "USA"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(city: "Hood River", state: "Oregon", country: "USA"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.city == "Hood River")
         #expect(read.state == "Oregon")
@@ -249,7 +249,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "sub-location")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(city: "Hood River", subLocation: "East Fork Sand"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(city: "Hood River", subLocation: "East Fork Sand"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.city == "Hood River")
         #expect(read.subLocation == "East Fork Sand")
@@ -260,7 +260,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "rating")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(rating: 4), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(rating: 4), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.rating == 4)
     }
@@ -270,7 +270,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "label")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Green"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(label: "Green"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.label == "Green")
     }
@@ -280,7 +280,7 @@ struct ImageXMPTests {
         let url = try Self.makeTestJPEG(named: "label-color")
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Orange", labelColor: "#F37500"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(label: "Orange", labelColor: "#F37500"), url: url)
         let read = try ImageXMP.readMetadata(from: url)
         #expect(read.label == "Orange")
         #expect(read.labelColor == "#F37500")
@@ -292,7 +292,7 @@ struct ImageXMPTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(accessibilityAltText: "A cyclist on a gravel path", accessibilityDescription: "Extended accessibility description"),
+            XMPMetadata(accessibilityAltText: "A cyclist on a gravel path", accessibilityDescription: "Extended accessibility description"),
             url: url
         )
         let read = try ImageXMP.readMetadata(from: url)
@@ -306,11 +306,11 @@ struct ImageXMPTests {
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(keywords: ["bike"], creators: ["Ryan"], title: "T", description: "D"),
+            XMPMetadata(keywords: ["bike"], creators: ["Ryan"], title: "T", description: "D"),
             url: url
         )
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(copyright: "© 2026", city: "Hood River", rating: 5, label: "Red"),
+            XMPMetadata(copyright: "© 2026", city: "Hood River", rating: 5, label: "Red"),
             url: url
         )
 

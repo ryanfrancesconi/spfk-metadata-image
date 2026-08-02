@@ -53,20 +53,20 @@ struct ImageXMPClearingTests {
     @Test func clearingKeywordsEmptiesThem() throws {
         let url = try Self.makeTestJPEG(named: "clear-keywords")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(keywords: ["beach", "sunset"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["beach", "sunset"]), url: url)
         #expect(try ImageXMP.readMetadata(from: url).keywords == ["beach", "sunset"])
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.keywords], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.keywords], url: url)
         #expect(try ImageXMP.readMetadata(from: url).keywords.isEmpty)
     }
 
     @Test func clearingCreatorsEmptiesThem() throws {
         let url = try Self.makeTestJPEG(named: "clear-creators")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(creators: ["Ansel"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(creators: ["Ansel"]), url: url)
         #expect(try ImageXMP.readMetadata(from: url).creators == ["Ansel"])
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.creators], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.creators], url: url)
         #expect(try ImageXMP.readMetadata(from: url).creators.isEmpty)
     }
 
@@ -75,10 +75,10 @@ struct ImageXMPClearingTests {
     @Test func clearingTitleEmptiesIt() throws {
         let url = try Self.makeTestJPEG(named: "clear-title")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(title: "Original"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(title: "Original"), url: url)
         #expect(try ImageXMP.readMetadata(from: url).title == "Original")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.title], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.title], url: url)
         #expect(try ImageXMP.readMetadata(from: url).title == nil)
     }
 
@@ -86,14 +86,14 @@ struct ImageXMPClearingTests {
         let url = try Self.makeTestJPEG(named: "clear-desc")
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(description: "A description", copyright: "© 2026"),
+            XMPMetadata(description: "A description", copyright: "© 2026"),
             url: url
         )
         let written = try ImageXMP.readMetadata(from: url)
         #expect(written.description == "A description")
         #expect(written.copyright == "© 2026")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.description, .copyright], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.description, .copyright], url: url)
         let cleared = try ImageXMP.readMetadata(from: url)
         #expect(cleared.description == nil)
         #expect(cleared.copyright == nil)
@@ -105,12 +105,12 @@ struct ImageXMPClearingTests {
         let url = try Self.makeTestJPEG(named: "clear-location")
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(city: "Portland", state: "Oregon", country: "USA"),
+            XMPMetadata(city: "Portland", state: "Oregon", country: "USA"),
             url: url
         )
         #expect(try ImageXMP.readMetadata(from: url).city == "Portland")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.city, .state, .country], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.city, .state, .country], url: url)
         let cleared = try ImageXMP.readMetadata(from: url)
         #expect(cleared.city == nil)
         #expect(cleared.state == nil)
@@ -122,20 +122,20 @@ struct ImageXMPClearingTests {
     @Test func clearingLabelEmptiesIt() throws {
         let url = try Self.makeTestJPEG(named: "clear-label")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(label: "Select"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(label: "Select"), url: url)
         #expect(try ImageXMP.readMetadata(from: url).label == "Select")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.label], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.label], url: url)
         #expect(try ImageXMP.readMetadata(from: url).label == nil)
     }
 
     @Test func clearingRatingEmptiesIt() throws {
         let url = try Self.makeTestJPEG(named: "clear-rating")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(rating: 4), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(rating: 4), url: url)
         #expect(try ImageXMP.readMetadata(from: url).rating == 4)
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.rating], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.rating], url: url)
         #expect(try ImageXMP.readMetadata(from: url).rating == nil)
     }
 
@@ -147,11 +147,11 @@ struct ImageXMPClearingTests {
         let url = try Self.makeTestJPEG(named: "clear-surgical")
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(keywords: ["keep"], title: "Keep", city: "Portland"),
+            XMPMetadata(keywords: ["keep"], title: "Keep", city: "Portland"),
             url: url
         )
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.title], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.title], url: url)
 
         let result = try ImageXMP.readMetadata(from: url)
         #expect(result.title == nil)
@@ -164,8 +164,8 @@ struct ImageXMPClearingTests {
     @Test func clearingPreservesUnrelatedNonXMPMetadata() throws {
         let url = try Self.makeTestJPEG(named: "clear-preserves-exif")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(keywords: ["gone"]), url: url)
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.keywords], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["gone"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.keywords], url: url)
 
         let source = try #require(CGImageSourceCreateWithURL(url as CFURL, nil))
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
@@ -184,7 +184,7 @@ struct ImageXMPClearingTests {
         let url = try Self.makeTestJPEG(named: "clear-iptc-crosscheck")
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(title: "Original", description: "Caption", city: "Portland"),
+            XMPMetadata(title: "Original", description: "Caption", city: "Portland"),
             url: url
         )
 
@@ -200,7 +200,7 @@ struct ImageXMPClearingTests {
         #expect(written[kCGImagePropertyIPTCObjectName] as? String == "Original")
 
         try ImageXMP.writeMetadata(
-            ImageXMPMetadata(),
+            XMPMetadata(),
             clearing: [.title, .description, .city],
             url: url
         )
@@ -214,7 +214,7 @@ struct ImageXMPClearingTests {
     @Test func clearingAnAlreadyEmptyFieldIsNotAnError() throws {
         let url = try Self.makeTestJPEG(named: "clear-empty")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.title, .keywords], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.title, .keywords], url: url)
 
         #expect(try ImageXMP.readMetadata(from: url).title == nil)
     }
@@ -224,8 +224,8 @@ struct ImageXMPClearingTests {
     @Test func clearingTakesPrecedenceOverAValueInTheSameWrite() throws {
         let url = try Self.makeTestJPEG(named: "clear-precedence")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(title: "Original"), url: url)
-        try ImageXMP.writeMetadata(ImageXMPMetadata(title: "Ignored"), clearing: [.title], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(title: "Original"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(title: "Ignored"), clearing: [.title], url: url)
 
         #expect(try ImageXMP.readMetadata(from: url).title == nil)
     }
@@ -235,9 +235,9 @@ struct ImageXMPClearingTests {
     @Test func aClearedFieldCanBeSetAgain() throws {
         let url = try Self.makeTestJPEG(named: "clear-then-set")
 
-        try ImageXMP.writeMetadata(ImageXMPMetadata(keywords: ["first"]), url: url)
-        try ImageXMP.writeMetadata(ImageXMPMetadata(), clearing: [.keywords], url: url)
-        try ImageXMP.writeMetadata(ImageXMPMetadata(keywords: ["second"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["first"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.keywords], url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["second"]), url: url)
 
         #expect(try ImageXMP.readMetadata(from: url).keywords == ["second"])
     }

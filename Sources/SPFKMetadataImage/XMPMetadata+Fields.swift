@@ -8,10 +8,10 @@ import Foundation
 /// toolkit does for video -- can map the whole set in one loop instead of restating a per-field
 /// switch. A second switch is exactly how one writer ends up handling thirteen fields and the
 /// other fourteen.
-extension ImageXMPMetadata {
+extension XMPMetadata {
     /// This field's value as XMP holds it: zero values when absent, one for a scalar, many for an
     /// array. Empty means "no value", which a writer turns into a removal.
-    public func values(for field: ImageXMPField) -> [String] {
+    public func values(for field: XMPField) -> [String] {
         switch field {
         case .keywords: keywords
         case .creators: creators
@@ -34,8 +34,8 @@ extension ImageXMPMetadata {
     ///
     /// A missing or empty entry leaves the field `nil`/empty, so a caller can pass only what it
     /// found without having to distinguish "absent" from "not looked for".
-    public init(fieldValues: [ImageXMPField: [String]]) {
-        func first(_ field: ImageXMPField) -> String? {
+    public init(fieldValues: [XMPField: [String]]) {
+        func first(_ field: XMPField) -> String? {
             guard let value = fieldValues[field]?.first, value.isNotEmpty else { return nil }
             return value
         }

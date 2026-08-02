@@ -108,16 +108,16 @@ public enum ImageXMP {
 
     /// Reads every field this package supports in one pass (one file open, one metadata copy).
     /// See this type's doc comment for the write-side story behind each field's mechanism.
-    public static func readMetadata(from url: URL) throws -> ImageXMPMetadata {
+    public static func readMetadata(from url: URL) throws -> XMPMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
         }
 
         guard let metadata = CGImageSourceCopyMetadataAtIndex(source, 0, nil) else {
-            return ImageXMPMetadata()
+            return XMPMetadata()
         }
 
-        return ImageXMPMetadata(
+        return XMPMetadata(
             keywords: arrayValue(metadata, path: "dc:subject"),
             creators: arrayValue(metadata, path: "dc:creator"),
             title: alternateTextValue(metadata, path: "dc:title"),
@@ -139,7 +139,7 @@ public enum ImageXMP {
     /// the file. `[]`/`nil` means **"leave the existing value alone"**, not "clear it" -- use
     /// `clearing` for that.
     ///
-    /// The two are separate because `ImageXMPMetadata` cannot express the difference: an editor
+    /// The two are separate because `XMPMetadata` cannot express the difference: an editor
     /// needs "the user did not touch this" and "the user emptied this" to mean different things
     /// the moment a text field is editable. A sentinel value would collide with real content, and
     /// a replace-everything write would destroy the fields this package does not model.
@@ -148,8 +148,8 @@ public enum ImageXMP {
     ///   written even if `metadata` carries a value for it -- clearing wins, so a caller cannot
     ///   accidentally ask for both.
     public static func writeMetadata(
-        _ metadata: ImageXMPMetadata,
-        clearing: Set<ImageXMPField> = [],
+        _ metadata: XMPMetadata,
+        clearing: Set<XMPField> = [],
         url: URL
     ) throws {
         var writes: [MetadataWrite] = []
@@ -313,7 +313,7 @@ public enum ImageXMP {
     /// original in place, so a failure or crash mid-write can't corrupt it.
     private static func writeTags(
         _ writes: [MetadataWrite],
-        clearing: Set<ImageXMPField> = [],
+        clearing: Set<XMPField> = [],
         url: URL
     ) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {

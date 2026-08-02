@@ -2,7 +2,17 @@
 
 import Foundation
 
-/// Dublin Core / IPTC / IPTC Extension / XMP Basic fields `ImageXMP` reads/writes.
+/// The descriptive XMP vocabulary -- Dublin Core / IPTC / IPTC Extension / XMP Basic fields --
+/// carried by an image or a video alike.
+///
+/// Format-neutral by design: `ImageXMP` reads and writes it through ImageIO, `VideoXMP` (in
+/// `spfk-metadata-xmp`) through the Adobe toolkit, and both address the identical ``XMPField``
+/// set. That shared set is what stops a video and an image from supporting different fields --
+/// the drift the workspace CLAUDE.md warns about for format-capability lists. It lives in this
+/// package rather than `spfk-metadata-xmp` only because that package already depends on this one.
+///
+/// Distinct from `spfk-metadata-xmp`'s `XMPDynamicMedia`, which models the technical, time-based
+/// half of XMP (markers, timecode, tracks).
 ///
 /// - `keywords`/`creators` -- array-typed (`rdf:Bag`/`rdf:Seq`).
 /// - `title`/`description`/`copyright` -- language-alternative (`rdf:Alt`, always written/read
@@ -32,7 +42,7 @@ import Foundation
 ///
 /// `nil` for any optional field means the field isn't present on the file, distinct from an
 /// empty string or `0`.
-public struct ImageXMPMetadata: Hashable, Sendable {
+public struct XMPMetadata: Hashable, Sendable {
     public var keywords: [String]
     public var creators: [String]
     public var title: String?
