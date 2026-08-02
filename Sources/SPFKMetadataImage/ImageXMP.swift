@@ -136,85 +136,95 @@ public enum ImageXMP {
     }
 
     /// Writes every non-empty/non-nil field in `metadata`, preserving everything else already on
-    /// the file (`[]`/`nil` means "leave the existing value alone," not "clear it" -- there's no
-    /// clear-a-field operation yet since nothing in TorchTag calls this today; editing is
-    /// deferred until the Content store exists, see `torchtag-xmp-keywords-plan.md`). This
-    /// exists for round-trip testing and package completeness, matching how `setKeywords`
-    /// existed before any UI used it.
-    public static func writeMetadata(_ metadata: ImageXMPMetadata, url: URL) throws {
+    /// the file. `[]`/`nil` means **"leave the existing value alone"**, not "clear it" -- use
+    /// `clearing` for that.
+    ///
+    /// The two are separate because `ImageXMPMetadata` cannot express the difference: an editor
+    /// needs "the user did not touch this" and "the user emptied this" to mean different things
+    /// the moment a text field is editable. A sentinel value would collide with real content, and
+    /// a replace-everything write would destroy the fields this package does not model.
+    ///
+    /// - Parameter clearing: fields to remove from the file. A field listed here is **not**
+    ///   written even if `metadata` carries a value for it -- clearing wins, so a caller cannot
+    ///   accidentally ask for both.
+    public static func writeMetadata(
+        _ metadata: ImageXMPMetadata,
+        clearing: Set<ImageXMPField> = [],
+        url: URL
+    ) throws {
         var writes: [MetadataWrite] = []
-        if metadata.keywords.isNotEmpty {
+        if metadata.keywords.isNotEmpty, !clearing.contains(.keywords) {
             writes.append(.array(name: "subject", type: .arrayUnordered, value: metadata.keywords as CFArray))
         }
-        if metadata.creators.isNotEmpty {
+        if metadata.creators.isNotEmpty, !clearing.contains(.creators) {
             writes.append(.array(name: "creator", type: .arrayOrdered, value: metadata.creators as CFArray))
         }
-        if let title = metadata.title {
+        if let title = metadata.title, !clearing.contains(.title) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCObjectName, value: title as CFString
             ))
         }
-        if let description = metadata.description {
+        if let description = metadata.description, !clearing.contains(.description) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCaptionAbstract, value: description as CFString
             ))
         }
-        if let copyright = metadata.copyright {
+        if let copyright = metadata.copyright, !clearing.contains(.copyright) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCopyrightNotice, value: copyright as CFString
             ))
         }
-        if let city = metadata.city {
+        if let city = metadata.city, !clearing.contains(.city) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCity, value: city as CFString
             ))
         }
-        if let state = metadata.state {
+        if let state = metadata.state, !clearing.contains(.state) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCProvinceState, value: state as CFString
             ))
         }
-        if let country = metadata.country {
+        if let country = metadata.country, !clearing.contains(.country) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCountryPrimaryLocationName, value: country as CFString
             ))
         }
-        if let subLocation = metadata.subLocation {
+        if let subLocation = metadata.subLocation, !clearing.contains(.subLocation) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCSubLocation, value: subLocation as CFString
             ))
         }
-        if let rating = metadata.rating {
+        if let rating = metadata.rating, !clearing.contains(.rating) {
             writes.append(.scalarProperty(
                 dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCStarRating, value: rating as CFNumber
             ))
         }
-        if let label = metadata.label {
+        if let label = metadata.label, !clearing.contains(.label) {
             writes.append(.namespacedTag(
                 namespace: xmpBasicNamespace as CFString, prefix: xmpBasicPrefix as CFString,
                 name: "Label", value: label as CFString, isAlternateText: false
             ))
         }
-        if let labelColor = metadata.labelColor {
+        if let labelColor = metadata.labelColor, !clearing.contains(.labelColor) {
             writes.append(.namespacedTag(
                 namespace: photoshopNamespace as CFString, prefix: photoshopPrefix as CFString,
                 name: "LabelColor", value: labelColor as CFString, isAlternateText: false
             ))
         }
-        if let altText = metadata.accessibilityAltText {
+        if let altText = metadata.accessibilityAltText, !clearing.contains(.accessibilityAltText) {
             writes.append(.namespacedTag(
                 namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
                 name: "AltTextAccessibility", value: altText as CFString, isAlternateText: true
             ))
         }
-        if let extendedDescription = metadata.accessibilityDescription {
+        if let extendedDescription = metadata.accessibilityDescription, !clearing.contains(.accessibilityDescription) {
             writes.append(.namespacedTag(
                 namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
                 name: "ExtDescrAccessibility", value: extendedDescription as CFString, isAlternateText: true
             ))
         }
 
-        try writeTags(writes, url: url)
+        try writeTags(writes, clearing: clearing, url: url)
     }
 
     // MARK: - Private
@@ -301,7 +311,11 @@ public enum ImageXMP {
     /// replacement. Writes to a temporary file in the same directory as `url`, then atomically
     /// replaces the original via `FileManager.replaceItemAt` -- never partially overwrites the
     /// original in place, so a failure or crash mid-write can't corrupt it.
-    private static func writeTags(_ writes: [MetadataWrite], url: URL) throws {
+    private static func writeTags(
+        _ writes: [MetadataWrite],
+        clearing: Set<ImageXMPField> = [],
+        url: URL
+    ) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
         }
@@ -310,7 +324,42 @@ public enum ImageXMP {
             throw ImageXMPError.sourceCreationFailed(url)
         }
 
-        let metadata = CGImageMetadataCreateMutable()
+        // Removal needs a fundamentally different write mode, not just an extra call. The
+        // additive path below builds an *empty* metadata object and hands it to ImageIO with
+        // `kCGImageDestinationMergeMetadata`, which only ever adds -- there is nothing present in
+        // it to remove, and merging cannot express absence. So clearing works against a mutable
+        // copy of what the file already has, removes from that, and writes it back with merging
+        // off, replacing the metadata wholesale. Since the object started as a full copy of the
+        // file's own metadata, everything not explicitly removed survives.
+        //
+        // The additive path is kept for the no-clearing case rather than routing everything
+        // through the copy: it is the path with the crash history documented on this type and the
+        // existing round-trip coverage, and there is no reason to disturb it.
+        let metadata: CGMutableImageMetadata
+        let shouldMerge: Bool
+
+        if clearing.isEmpty {
+            metadata = CGImageMetadataCreateMutable()
+            shouldMerge = true
+        } else {
+            if let existing = CGImageSourceCopyMetadataAtIndex(source, 0, nil),
+               let mutableCopy = CGImageMetadataCreateMutableCopy(existing)
+            {
+                metadata = mutableCopy
+            } else {
+                // No XMP on the file at all: nothing to remove, and an empty object replacing
+                // nothing is equivalent to the additive path.
+                metadata = CGImageMetadataCreateMutable()
+            }
+
+            shouldMerge = false
+
+            for field in clearing {
+                // Returns false when the tag was not present, which is the ordinary case of
+                // clearing an already-empty field -- not an error.
+                CGImageMetadataRemoveTagWithPath(metadata, nil, field.path as CFString)
+            }
+        }
 
         // Namespace registration is only needed for the manual `CGImageMetadataTagCreate` path
         // `.array`/`.namespacedTag` use -- `.scalarProperty`'s bridge API already knows the
@@ -377,7 +426,7 @@ public enum ImageXMP {
 
         let options: [CFString: Any] = [
             kCGImageDestinationMetadata: metadata,
-            kCGImageDestinationMergeMetadata: true,
+            kCGImageDestinationMergeMetadata: shouldMerge,
         ]
 
         var copyError: Unmanaged<CFError>?
