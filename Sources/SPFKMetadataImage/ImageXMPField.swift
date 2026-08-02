@@ -27,6 +27,39 @@ public enum ImageXMPField: String, Sendable, CaseIterable {
     case accessibilityAltText
     case accessibilityDescription
 
+    /// The XMP namespace URI this field's property lives in.
+    ///
+    /// Exposed alongside `path` because the two writers need the same vocabulary in different
+    /// shapes: ImageIO addresses a property by prefixed path, while the Adobe toolkit takes a
+    /// namespace URI and a local name. Deriving both from one case is what keeps an image write
+    /// and a video write from drifting onto different fields.
+    public var namespace: String {
+        switch self {
+        case .keywords, .creators, .title, .description, .copyright:
+            "http://purl.org/dc/elements/1.1/"
+        case .city, .state, .country, .labelColor:
+            "http://ns.adobe.com/photoshop/1.0/"
+        case .rating, .label:
+            "http://ns.adobe.com/xap/1.0/"
+        case .subLocation, .accessibilityAltText, .accessibilityDescription:
+            "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
+        }
+    }
+
+    /// The property's local name, i.e. `path` without its namespace prefix.
+    public var localName: String {
+        guard let separator = path.firstIndex(of: ":") else { return path }
+        return String(path[path.index(after: separator)...])
+    }
+
+    /// Whether the property is an `rdf:Bag`/`rdf:Seq` holding several values rather than one.
+    public var isArray: Bool {
+        switch self {
+        case .keywords, .creators: true
+        default: false
+        }
+    }
+
     /// The XMP path this field lives at.
     ///
     /// Alternate-text fields (`dc:title`, `dc:description`, `dc:rights`, and the two
