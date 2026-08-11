@@ -3,6 +3,7 @@
 import Foundation
 import ImageIO
 import SPFKBase
+import UniformTypeIdentifiers
 
 /// Reads and writes XMP metadata on image files via ImageIO's native `CGImageMetadata`/
 /// `CGImageDestination` APIs -- not the Adobe XMP Toolkit (`spfk-metadata-xmp`).
@@ -81,6 +82,29 @@ public enum ImageXMP {
 
     private static let dublinCoreNamespace = "http://purl.org/dc/elements/1.1/"
     private static let dublinCorePrefix = "dc"
+
+    // MARK: - Write capability
+
+    /// The content types ImageIO can write, which is a strict subset of what it can read.
+    ///
+    /// Read from `CGImageDestinationCopyTypeIdentifiers()` rather than transcribed: the set is the
+    /// system's and moves between OS versions. 22 writable against 62 readable on macOS 26.5.
+    public static let writableContentTypes: Set<String> =
+        Set(CGImageDestinationCopyTypeIdentifiers() as? [String] ?? [])
+
+    /// Whether ImageIO can write metadata back to a file with this path extension.
+    ///
+    /// **Readable does not imply writable.** WebP is the case users meet: it reads in full —
+    /// EXIF, XMP rating, IPTC keywords, GPS — and has no encoder here at all, so every write to
+    /// one fails. ``writeMetadata(_:clearing:url:)`` throws for exactly the files this refuses,
+    /// and asking first is what keeps work from being queued that can never be saved.
+    ///
+    /// By extension rather than by opening the file: this is asked per row and per field.
+    public static func canWrite(url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+
+        return writableContentTypes.contains(type.identifier)
+    }
 
     // MARK: - Keywords (dc:subject) -- unordered array
 
