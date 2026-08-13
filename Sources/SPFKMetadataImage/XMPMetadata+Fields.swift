@@ -2,12 +2,9 @@
 
 import Foundation
 
-/// Field-keyed access to the same fourteen values the named properties expose.
-///
-/// Exists so a writer that addresses XMP generically -- by namespace and name, as the Adobe
-/// toolkit does for video -- can map the whole set in one loop instead of restating a per-field
-/// switch. A second switch is exactly how one writer ends up handling thirteen fields and the
-/// other fourteen.
+/// Field-keyed access to the same values the named properties expose, so a writer addressing XMP
+/// generically — by namespace and name, as the Adobe toolkit does for video — can map the whole
+/// set in one loop rather than restating a per-field switch that can drift from this one.
 extension XMPMetadata {
     /// This field's value as XMP holds it: zero values when absent, one for a scalar, many for an
     /// array. Empty means "no value", which a writer turns into a removal.

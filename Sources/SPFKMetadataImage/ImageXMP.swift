@@ -5,63 +5,16 @@ import ImageIO
 import SPFKBase
 import UniformTypeIdentifiers
 
-/// Reads and writes XMP metadata on image files via ImageIO's native `CGImageMetadata`/
-/// `CGImageDestination` APIs -- not the Adobe XMP Toolkit (`spfk-metadata-xmp`).
+/// Reads and writes XMP metadata on image files through ImageIO's `CGImageMetadata`/
+/// `CGImageDestination`, not the Adobe XMP Toolkit (`spfk-metadata-xmp`), whose HEIC handler can
+/// neither write XMP into a HEIC nor read back what ImageIO wrote there. `spfk-metadata-xmp`
+/// stays the right tool for JPEG, TIFF-based RAW and its audio/video Dynamic Media use case.
 ///
-/// This exists because the vendored Adobe SDK's HEIC format handler is broken in both
-/// directions: verified directly (2026-07-24) against a real iPhone HEIC file with no
-/// pre-existing XMP -- `spfk-metadata-xmp`'s `XMP.setArrayProperty` fails with "Cannot put XMP
-/// into file", and even XMP written by ImageIO into that same HEIC can't be read back through
-/// the Adobe SDK's parser ("Failed to find an XMP chunk"). ImageIO handles this correctly and
-/// uniformly across JPEG/HEIC/PNG/TIFF/DNG -- one code path, no vendored binary dependency.
-/// `spfk-metadata-xmp` remains the right tool for formats its Adobe SDK format handlers do
-/// support well (JPEG, TIFF-based RAW, and its original audio/video Dynamic Media use case).
-///
-/// **Array-typed (`rdf:Bag`/`rdf:Seq`) fields**: keywords (`dc:subject`) and creators
-/// (`dc:creator`). **Language-alternative (`rdf:Alt`) fields**: title (`dc:title`), description
-/// (`dc:description`), copyright (`dc:rights`), and the accessibility fields
-/// (`Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility`). **Plain scalar fields**: city/
-/// state/country (`photoshop:City`/`State`/`Country`), rating (`xmp:Rating`), label
-/// (`xmp:Label`), and label color (`photoshop:LabelColor`).
-///
-/// The `rdf:Alt` fields have a real crash history -- **never build an `rdf:Alt` tag with a bare
-/// path.** Original investigation (2026-07-24): writing `dc:rights` via
-/// `CGImageMetadataTagCreate(..., .alternateText, ...)` + `CGImageMetadataSetTagWithPath(...,
-/// "dc:rights", ...)` (a bare path, no language index) **crashed the process** with
-/// `-[Swift.__StringStorage count]: unrecognized selector sent to instance` on a real, untouched
-/// iPhone HEIC file, despite passing reliably against synthetic JPEG fixtures every time --
-/// `dc:title`/`dc:description` round-tripped unreliably the same way (correct in one specific
-/// field combination tested, `nil` in every other).
-///
-/// **Root cause found (2026-07-27), and it's the bare path, not the `.alternateText` type or
-/// hand-building in general:** ImageIO's `CGImageMetadataCopyTagWithPath` documentation
-/// describes alternate-text array elements as accessed by RFC 3066 language code in brackets --
-/// e.g. `"dc:description[x-default]"` -- the same way array elements use `[0]`. Setting a tag at
-/// the *bare* path (`"dc:rights"`) instead of the language-indexed path
-/// (`"dc:rights[x-default]"`) is what crashed; setting the identical `.default`-type tag at the
-/// `[x-default]`-indexed path works correctly and safely, verified (2026-07-27) against the
-/// exact same real HEIC that reproduced the original crash, for `dc:rights` *and* a brand-new
-/// custom namespace (`Iptc4xmpCore:AltTextAccessibility`) with no classic-property crosswalk at
-/// all -- both wrote, read back correctly, and preserved existing `dc:subject`/`dc:creator`.
-///
-/// Two safe write mechanisms follow from this, used depending on whether ImageIO recognizes a
-/// classic-property crosswalk for the field:
-/// - **Classic-property bridge** (`CGImageMetadataSetValueMatchingImageProperty`) for fields
-///   ImageIO's `CGImageProperties.h` exposes a classic IPTC dictionary key for: title,
-///   description, copyright (`kCGImagePropertyIPTCObjectName`/`CaptionAbstract`/
-///   `CopyrightNotice`), city/state/country (`kCGImagePropertyIPTCCity`/`ProvinceState`/
-///   `CountryPrimaryLocationName`), and rating (`kCGImagePropertyIPTCStarRating`). This bridge
-///   builds whichever internal structure is correct (`rdf:Alt` or a plain scalar) automatically.
-/// - **`[x-default]`-indexed path** for fields with no classic-property crosswalk at all --
-///   `Iptc4xmpCore:AltTextAccessibility`/`ExtDescrAccessibility` (IPTC Extension fields newer
-///   than ImageIO's classic-dictionary bridge, confirmed absent from `CGImageProperties.h` by
-///   direct header inspection) and `xmp:Label` (a plain scalar, no `rdf:Alt` involved, so no
-///   indexed path needed there -- just a namespaced tag at a bare path, which is safe for
-///   non-alternate-text fields; the crash was specific to bare-path *alternate-text* tags).
-///
-/// Don't add another `rdf:Alt` field via a bare-path `CGImageMetadataSetTagWithPath` call --
-/// always use the bridge if a classic-property crosswalk exists, or the `[x-default]`-indexed
-/// path if it doesn't.
+/// **Never set an `rdf:Alt` field at a bare path** — a tag set at `"dc:rights"` crashes the
+/// process, where the language-indexed `"dc:rights[x-default]"` is safe. Use
+/// `CGImageMetadataSetValueMatchingImageProperty` for fields ImageIO exposes a classic-property
+/// crosswalk for, and the `[x-default]`-indexed path for those it does not. Bare paths are fine
+/// for plain scalars.
 public enum ImageXMP {
     public enum ImageXMPError: Error, CustomStringConvertible {
         case sourceCreationFailed(URL)
@@ -94,12 +47,10 @@ public enum ImageXMP {
 
     /// Whether ImageIO can write metadata back to a file with this path extension.
     ///
-    /// **Readable does not imply writable.** WebP is the case users meet: it reads in full —
-    /// EXIF, XMP rating, IPTC keywords, GPS — and has no encoder here at all, so every write to
-    /// one fails. ``writeMetadata(_:clearing:url:)`` throws for exactly the files this refuses,
-    /// and asking first is what keeps work from being queued that can never be saved.
-    ///
-    /// By extension rather than by opening the file: this is asked per row and per field.
+    /// **Readable does not imply writable** — WebP reads in full and has no encoder at all, so
+    /// every write to one fails. ``writeMetadata(_:clearing:url:)`` throws for exactly the files
+    /// this refuses. Answered by extension rather than by opening the file, since it is asked per
+    /// row and per field.
     public static func canWrite(url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
 
@@ -108,10 +59,8 @@ public enum ImageXMP {
 
     // MARK: - Keywords (dc:subject) -- unordered array
 
-    /// Reads keywords (`dc:subject`) from an image file. Returns an empty array both when the
-    /// file has no XMP at all and when it has XMP but no keywords -- these aren't distinguished
-    /// since neither is an error condition for a caller that just wants "what keywords does
-    /// this file have."
+    /// Reads keywords (`dc:subject`) from an image file. An empty array covers both a file with
+    /// no XMP and one with XMP but no keywords; neither is an error condition.
     public static func keywords(from url: URL) throws -> [String] {
         try readMetadata(from: url).keywords
     }
@@ -130,8 +79,7 @@ public enum ImageXMP {
     private static let photoshopNamespace = "http://ns.adobe.com/photoshop/1.0/"
     private static let photoshopPrefix = "photoshop"
 
-    /// Reads every field this package supports in one pass (one file open, one metadata copy).
-    /// See this type's doc comment for the write-side story behind each field's mechanism.
+    /// Reads every field this package supports in one pass — one file open, one metadata copy.
     public static func readMetadata(from url: URL) throws -> XMPMetadata {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             throw ImageXMPError.sourceCreationFailed(url)
@@ -160,17 +108,11 @@ public enum ImageXMP {
     }
 
     /// Writes every non-empty/non-nil field in `metadata`, preserving everything else already on
-    /// the file. `[]`/`nil` means **"leave the existing value alone"**, not "clear it" -- use
-    /// `clearing` for that.
-    ///
-    /// The two are separate because `XMPMetadata` cannot express the difference: an editor
-    /// needs "the user did not touch this" and "the user emptied this" to mean different things
-    /// the moment a text field is editable. A sentinel value would collide with real content, and
-    /// a replace-everything write would destroy the fields this package does not model.
+    /// the file. `[]`/`nil` means **leave the existing value alone**, not clear it — `clearing`
+    /// is what expresses the difference `XMPMetadata` cannot.
     ///
     /// - Parameter clearing: fields to remove from the file. A field listed here is **not**
-    ///   written even if `metadata` carries a value for it -- clearing wins, so a caller cannot
-    ///   accidentally ask for both.
+    ///   written even if `metadata` carries a value for it.
     public static func writeMetadata(
         _ metadata: XMPMetadata,
         clearing: Set<XMPField> = [],
@@ -253,30 +195,22 @@ public enum ImageXMP {
 
     // MARK: - Private
 
-    /// Three write mechanisms, chosen per-field -- see this file's doc comment for why each one
-    /// exists and the crash history behind the distinction:
-    /// - `.array` builds a `dc:`-namespaced tag by hand, the only safe way found for
-    ///   `rdf:Bag`/`rdf:Seq` fields (keywords/creators).
-    /// - `.scalarProperty` goes through the `CGImageMetadataSetValueMatchingImageProperty`
-    ///   bridge, for any field with a classic-property crosswalk (title/description/copyright/
-    ///   city/state/country/rating).
-    /// - `.namespacedTag` builds a tag directly under a registered namespace, for fields with no
-    ///   classic-property crosswalk at all (label, label color, accessibility alt-text/description).
-    ///   `isAlternateText: true` sets it at the `[x-default]`-indexed path (required for
-    ///   `rdf:Alt` fields, verified crash-safe); `false` sets it at a bare path (fine for plain
-    ///   scalars, since the crash was specific to bare-path *alternate-text* tags).
+    /// Three write mechanisms, chosen per field:
+    /// - `.array` hand-builds a `dc:`-namespaced tag, the only safe way found for `rdf:Bag`/
+    ///   `rdf:Seq` fields.
+    /// - `.scalarProperty` goes through the `CGImageMetadataSetValueMatchingImageProperty` bridge,
+    ///   for any field with a classic-property crosswalk.
+    /// - `.namespacedTag` builds a tag under a registered namespace, for fields with no crosswalk.
+    ///   `isAlternateText` selects the `[x-default]`-indexed path `rdf:Alt` fields require.
     private enum MetadataWrite {
         case array(name: String, type: CGImageMetadataType, value: CFArray)
         case scalarProperty(dictionary: CFString, property: CFString, value: CFTypeRef)
         case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, isAlternateText: Bool)
     }
 
-    /// Handles both `rdf:Bag` (unordered, e.g. `dc:subject`) and `rdf:Seq` (ordered, e.g.
-    /// `dc:creator`) array tags -- both come back from `CGImageMetadataTagCopyValue` as an
-    /// array of *nested* `CGImageMetadataTag` objects, not plain strings directly (verified via
-    /// a standalone instrumented script -- a naive `value as? [String]` cast silently fails and
-    /// always returns `[]`). A single-element file may come back as a bare `CFString` rather
-    /// than a one-element array, so that shape is handled too.
+    /// Handles both `rdf:Bag` and `rdf:Seq` array tags. `CGImageMetadataTagCopyValue` returns an
+    /// array of *nested* `CGImageMetadataTag` objects rather than strings — a `value as? [String]`
+    /// cast silently yields `[]` — and a single-element field can come back as a bare `CFString`.
     private static func arrayValue(_ metadata: CGImageMetadata, path: String) -> [String] {
         guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
               let value = CGImageMetadataTagCopyValue(tag)
@@ -294,11 +228,8 @@ public enum ImageXMP {
         return []
     }
 
-    /// Reads an `rdf:Alt` (language-alternative) field -- `dc:title`/`dc:description`. Comes
-    /// back from `CGImageMetadataTagCopyValue` the same shape as the array fields (an array of
-    /// nested `CGImageMetadataTag` objects, one per language, verified via this package's real-
-    /// file spike), so the first entry (the `x-default` language, the only one this package
-    /// ever writes) is what a caller wants.
+    /// Reads an `rdf:Alt` (language-alternative) field. Same nested-tag shape as the array fields,
+    /// one entry per language; the first is `x-default`, the only language this package writes.
     private static func alternateTextValue(_ metadata: CGImageMetadata, path: String) -> String? {
         guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
               let value = CGImageMetadataTagCopyValue(tag)
@@ -310,9 +241,8 @@ public enum ImageXMP {
         return value as? String
     }
 
-    /// Reads a plain (non-alternate-text) scalar string field -- `photoshop:City`/`State`/
-    /// `Country`, `xmp:Label`. These come back as a bare `String`, not array-wrapped like the
-    /// array or alternate-text fields.
+    /// Reads a plain (non-alternate-text) scalar string field. These come back as a bare `String`,
+    /// not array-wrapped like the array or alternate-text fields.
     private static func scalarStringValue(_ metadata: CGImageMetadata, path: String) -> String? {
         guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString) else { return nil }
         return CGImageMetadataTagCopyValue(tag) as? String
@@ -329,12 +259,9 @@ public enum ImageXMP {
         return nil
     }
 
-    /// Shared write path for `setKeywords`/`writeMetadata`: builds a mutable metadata object
-    /// from `writes`, then merges it onto the file via `kCGImageDestinationMergeMetadata` --
-    /// preserving all other existing metadata (EXIF, other XMP fields), not a wholesale
-    /// replacement. Writes to a temporary file in the same directory as `url`, then atomically
-    /// replaces the original via `FileManager.replaceItemAt` -- never partially overwrites the
-    /// original in place, so a failure or crash mid-write can't corrupt it.
+    /// Builds a metadata object from `writes` and merges it onto the file, preserving the EXIF and
+    /// XMP this package does not model. Writes to a temporary file in the same directory as `url`
+    /// and atomically replaces the original, so a failure mid-write cannot corrupt it.
     private static func writeTags(
         _ writes: [MetadataWrite],
         clearing: Set<XMPField> = [],
@@ -348,17 +275,9 @@ public enum ImageXMP {
             throw ImageXMPError.sourceCreationFailed(url)
         }
 
-        // Removal needs a fundamentally different write mode, not just an extra call. The
-        // additive path below builds an *empty* metadata object and hands it to ImageIO with
-        // `kCGImageDestinationMergeMetadata`, which only ever adds -- there is nothing present in
-        // it to remove, and merging cannot express absence. So clearing works against a mutable
-        // copy of what the file already has, removes from that, and writes it back with merging
-        // off, replacing the metadata wholesale. Since the object started as a full copy of the
-        // file's own metadata, everything not explicitly removed survives.
-        //
-        // The additive path is kept for the no-clearing case rather than routing everything
-        // through the copy: it is the path with the crash history documented on this type and the
-        // existing round-trip coverage, and there is no reason to disturb it.
+        // Merging only ever adds, so an empty metadata object cannot express a removal. Clearing
+        // instead works against a mutable copy of the file's own metadata and writes it back with
+        // merging off; everything not explicitly removed survives.
         let metadata: CGMutableImageMetadata
         let shouldMerge: Bool
 
@@ -371,24 +290,20 @@ public enum ImageXMP {
             {
                 metadata = mutableCopy
             } else {
-                // No XMP on the file at all: nothing to remove, and an empty object replacing
-                // nothing is equivalent to the additive path.
+                // No XMP on the file at all — nothing to remove.
                 metadata = CGImageMetadataCreateMutable()
             }
 
             shouldMerge = false
 
             for field in clearing {
-                // Returns false when the tag was not present, which is the ordinary case of
-                // clearing an already-empty field -- not an error.
+                // Returns false when the tag was absent, the ordinary case for an empty field.
                 CGImageMetadataRemoveTagWithPath(metadata, nil, field.path as CFString)
             }
         }
 
-        // Namespace registration is only needed for the manual `CGImageMetadataTagCreate` path
-        // `.array`/`.namespacedTag` use -- `.scalarProperty`'s bridge API already knows the
-        // namespace for any classic property it recognizes. Each unique (namespace, prefix) is
-        // only registered once, even if used by multiple `.namespacedTag` writes.
+        // Only the manual `CGImageMetadataTagCreate` paths need a registered namespace; the
+        // `.scalarProperty` bridge already knows the namespace of any classic property.
         if writes.contains(where: { if case .array = $0 { true } else { false } }) {
             var registrationError: Unmanaged<CFError>?
             guard CGImageMetadataRegisterNamespaceForPrefix(

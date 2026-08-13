@@ -4,13 +4,10 @@ import Foundation
 
 /// One writable field of ``XMPMetadata``, identified by its XMP path.
 ///
-/// Exists so a caller can say "empty this field" as distinct from "leave it alone", which
-/// ``XMPMetadata`` alone cannot express: `nil`/`[]` there means "no new value", and an editor
-/// needs both meanings the moment a user can clear a text field.
-///
-/// `path` is the same path the corresponding read in `ImageXMP.readMetadata(from:)` uses -- kept
-/// alongside the case so the two cannot drift, since a clear that targets a different path than
-/// the read looks exactly like the clear silently not working.
+/// Lets a caller say "empty this field" as distinct from "leave it alone", which ``XMPMetadata``
+/// alone cannot express — `nil`/`[]` there means "no new value". `path` must stay the path
+/// `ImageXMP.readMetadata(from:)` reads from: a clear targeting a different one looks exactly
+/// like the clear silently not working.
 public enum XMPField: String, Sendable, CaseIterable {
     case keywords
     case creators
@@ -29,10 +26,9 @@ public enum XMPField: String, Sendable, CaseIterable {
 
     /// The XMP namespace URI this field's property lives in.
     ///
-    /// Exposed alongside `path` because the two writers need the same vocabulary in different
-    /// shapes: ImageIO addresses a property by prefixed path, while the Adobe toolkit takes a
-    /// namespace URI and a local name. Deriving both from one case is what keeps an image write
-    /// and a video write from drifting onto different fields.
+    /// Alongside `path` because the two writers need the same vocabulary in different shapes:
+    /// ImageIO addresses a property by prefixed path, the Adobe toolkit by namespace URI and
+    /// local name.
     public var namespace: String {
         switch self {
         case .keywords, .creators, .title, .description, .copyright:
@@ -62,12 +58,10 @@ public enum XMPField: String, Sendable, CaseIterable {
 
     /// The XMP path this field lives at.
     ///
-    /// Alternate-text fields (`dc:title`, `dc:description`, `dc:rights`, and the two
-    /// accessibility fields) are given as the bare path here deliberately: removal takes the
-    /// container, not one language entry, so clearing drops every language rather than leaving an
-    /// `rdf:Alt` holding languages the user cannot see or edit. Writing those fields still uses
-    /// the `[x-default]`-indexed path -- see `ImageXMP`'s doc comment for the crash history behind
-    /// that distinction.
+    /// Alternate-text fields are given as the bare path deliberately: removal takes the container
+    /// rather than one language entry, so clearing drops every language instead of leaving an
+    /// `rdf:Alt` holding ones the user cannot see. Writing them still uses the `[x-default]`-
+    /// indexed path — see ``ImageXMP``.
     public var path: String {
         switch self {
         case .keywords: "dc:subject"
@@ -78,6 +72,8 @@ public enum XMPField: String, Sendable, CaseIterable {
         case .city: "photoshop:City"
         case .state: "photoshop:State"
         case .country: "photoshop:Country"
+        // `Iptc4xmpCore:`, not the `photoshop:` namespace the other place fields use, despite
+        // going through the same classic-property bridge.
         case .subLocation: "Iptc4xmpCore:Location"
         case .rating: "xmp:Rating"
         case .label: "xmp:Label"
