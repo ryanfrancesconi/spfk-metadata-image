@@ -81,7 +81,10 @@ public enum ImageXMP {
 
     /// Reads every field this package supports in one pass — one file open, one metadata copy.
     public static func readMetadata(from url: URL) throws -> XMPMetadata {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        // A source is created for a file it cannot read; only its status says the read failed.
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              CGImageSourceGetStatus(source) == .statusComplete
+        else {
             throw ImageXMPError.sourceCreationFailed(url)
         }
 

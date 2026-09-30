@@ -45,6 +45,21 @@ struct ImageXMPTests {
         case imageCreationFailed
     }
 
+    /// A file that can't be read is not a file without metadata: a caller writes every field it
+    /// read back as empty, removing them.
+    @Test
+    func anUnreadableFileThrowsRatherThanReadingEmpty() throws {
+        let url = try Self.makeTestJPEG(named: "unreadable")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path) }
+
+        #expect(throws: (any Error).self) {
+            try ImageXMP.readMetadata(from: url)
+        }
+    }
+
     @Test
     func freshFileHasNoKeywords() throws {
         let url = try Self.makeTestJPEG(named: "fresh")
