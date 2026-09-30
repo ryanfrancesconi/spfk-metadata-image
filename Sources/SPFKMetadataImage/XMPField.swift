@@ -56,6 +56,15 @@ public enum XMPField: String, Sendable, CaseIterable {
         }
     }
 
+    /// Whether the property is an `rdf:Alt` language alternative, written per language with
+    /// `x-default` as the value a reader shows.
+    public var isLanguageAlternative: Bool {
+        switch self {
+        case .title, .description, .copyright, .accessibilityAltText, .accessibilityDescription: true
+        default: false
+        }
+    }
+
     /// The XMP path this field lives at.
     ///
     /// Alternate-text fields are given as the bare path deliberately: removal takes the container
