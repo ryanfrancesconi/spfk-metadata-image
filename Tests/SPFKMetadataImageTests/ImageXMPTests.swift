@@ -176,15 +176,10 @@ struct ImageXMPTests {
         #expect(read.keywords == ["original-keyword"])
     }
 
-    /// Regression test for a real crash found against a real HEIC file (2026-07-24): writing an
-    /// `.alternateText`-typed tag (dc:rights) via CGImageMetadataTagCreate crashed the process
-    /// with -[Swift.__StringStorage count]: unrecognized selector, despite passing reliably on
-    /// synthetic JPEG fixtures. Root cause traced (2026-07-27) to that specific call sequence --
-    /// switching to CGImageMetadataSetValueMatchingImageProperty (what title/description now use)
-    /// was verified crash-free against a real, metadata-rich iPhone HEIC, including for dc:rights
-    /// itself. This test exists so a future change to the write path doesn't silently reintroduce
-    /// the original crash without new real-file testing -- see titleAndDescriptionRoundTrip below
-    /// for the same coverage on the fields actually exposed.
+    /// Writing an `.alternateText` tag (dc:rights) through `CGImageMetadataTagCreate` crashes on a
+    /// real HEIC (`-[Swift.__StringStorage count]: unrecognized selector`) while passing on
+    /// synthetic JPEGs; the write path uses `CGImageMetadataSetValueMatchingImageProperty` instead.
+    /// See `titleAndDescriptionRoundTrip` for the fields actually exposed.
     @Test
     func realFileWritesDoNotCrash() throws {
         let url = try Self.makeTestJPEG(named: "real-file-safety")
