@@ -56,6 +56,11 @@ public enum XMPField: String, Sendable, CaseIterable {
         }
     }
 
+    /// Whether the array's order carries meaning, making it an `rdf:Seq` rather than an `rdf:Bag`.
+    public var isOrderedArray: Bool {
+        self == .creators
+    }
+
     /// Whether the property is an `rdf:Alt` language alternative, written per language with
     /// `x-default` as the value a reader shows.
     public var isLanguageAlternative: Bool {
