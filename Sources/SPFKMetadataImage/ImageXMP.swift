@@ -57,19 +57,6 @@ public enum ImageXMP {
         return writableContentTypes.contains(type.identifier)
     }
 
-    // MARK: - Keywords (dc:subject) -- unordered array
-
-    /// Reads keywords (`dc:subject`) from an image file. An empty array covers both a file with
-    /// no XMP and one with XMP but no keywords; neither is an error condition.
-    public static func keywords(from url: URL) throws -> [String] {
-        try readMetadata(from: url).keywords
-    }
-
-    /// Replaces the whole `dc:subject` keyword set, preserving all other existing metadata.
-    public static func setKeywords(_ keywords: [String], url: URL) throws {
-        try writeTags([.array(name: "subject", type: .arrayUnordered, value: keywords as CFArray)], url: url)
-    }
-
     // MARK: - Full metadata read
 
     private static let iptcExtensionNamespace = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
@@ -92,7 +79,12 @@ public enum ImageXMP {
             return XMPMetadata()
         }
 
-        return XMPMetadata(
+        return readMetadata(from: metadata)
+    }
+
+    /// Every field this package supports, from metadata already in memory.
+    static func readMetadata(from metadata: CGImageMetadata) -> XMPMetadata {
+        XMPMetadata(
             keywords: arrayValue(metadata, path: "dc:subject"),
             creators: arrayValue(metadata, path: "dc:creator"),
             title: alternateTextValue(metadata, path: "dc:title"),
@@ -193,7 +185,7 @@ public enum ImageXMP {
             ))
         }
 
-        try writeTags(writes, clearing: clearing, url: url)
+        try writeTags(writes, clearingPaths: clearing.map(\.path), url: url)
     }
 
     // MARK: - Private
@@ -205,7 +197,7 @@ public enum ImageXMP {
     ///   for any field with a classic-property crosswalk.
     /// - `.namespacedTag` builds a tag under a registered namespace, for fields with no crosswalk.
     ///   `isAlternateText` selects the `[x-default]`-indexed path `rdf:Alt` fields require.
-    private enum MetadataWrite {
+    enum MetadataWrite {
         case array(name: String, type: CGImageMetadataType, value: CFArray)
         case scalarProperty(dictionary: CFString, property: CFString, value: CFTypeRef)
         case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, isAlternateText: Bool)
@@ -265,9 +257,13 @@ public enum ImageXMP {
     /// Builds a metadata object from `writes` and merges it onto the file, preserving the EXIF and
     /// XMP this package does not model. Writes to a temporary file in the same directory as `url`
     /// and atomically replaces the original, so a failure mid-write cannot corrupt it.
-    private static func writeTags(
+    ///
+    /// `namespacesToRegister` lets a removal address a namespace the file's own metadata object has
+    /// no prefix for.
+    static func writeTags(
         _ writes: [MetadataWrite],
-        clearing: Set<XMPField> = [],
+        clearingPaths: [String] = [],
+        namespacesToRegister: [(namespace: String, prefix: String)] = [],
         url: URL
     ) throws {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
@@ -283,8 +279,9 @@ public enum ImageXMP {
         // merging off; everything not explicitly removed survives.
         let metadata: CGMutableImageMetadata
         let shouldMerge: Bool
+        var registeredPrefixes: Set<String> = []
 
-        if clearing.isEmpty {
+        if clearingPaths.isEmpty {
             metadata = CGImageMetadataCreateMutable()
             shouldMerge = true
         } else {
@@ -299,9 +296,19 @@ public enum ImageXMP {
 
             shouldMerge = false
 
-            for field in clearing {
+            for (namespace, prefix) in namespacesToRegister {
+                var registrationError: Unmanaged<CFError>?
+                guard CGImageMetadataRegisterNamespaceForPrefix(
+                    metadata, namespace as CFString, prefix as CFString, &registrationError
+                ) else {
+                    throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
+                }
+                registeredPrefixes.insert(prefix)
+            }
+
+            for path in clearingPaths {
                 // Returns false when the tag was absent, the ordinary case for an empty field.
-                CGImageMetadataRemoveTagWithPath(metadata, nil, field.path as CFString)
+                CGImageMetadataRemoveTagWithPath(metadata, nil, path as CFString)
             }
         }
 
@@ -316,7 +323,6 @@ public enum ImageXMP {
             }
         }
 
-        var registeredPrefixes: Set<String> = []
         for write in writes {
             switch write {
             case let .array(name, type, value):
