@@ -7,6 +7,17 @@ import Testing
 @testable import SPFKMetadataImage
 
 struct ImageXMPTests {
+    /// WebP reads without an encoder; SVG is a `public.image` ImageIO has no reader for.
+    @Test func readabilityIsSeparateFromWritability() {
+        let webP = URL(fileURLWithPath: "/tmp/a.webp")
+        let svg = URL(fileURLWithPath: "/tmp/a.svg")
+
+        #expect(ImageXMP.canRead(url: URL(fileURLWithPath: "/tmp/a.JPG")))
+        #expect(ImageXMP.canRead(url: webP))
+        #expect(ImageXMP.canWrite(url: webP) == false)
+        #expect(ImageXMP.canRead(url: svg) == false)
+    }
+
     /// Generates a small synthetic JPEG with a real EXIF field set (TIFF Make), so tests can
     /// verify keyword writes don't clobber other existing metadata. Pure metadata I/O doesn't
     /// need real photo content to test correctly, unlike ML-classification-style testing.

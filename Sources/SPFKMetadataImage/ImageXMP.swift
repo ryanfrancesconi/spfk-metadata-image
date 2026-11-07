@@ -57,6 +57,17 @@ public enum ImageXMP {
         return writableContentTypes.contains(type.identifier)
     }
 
+    /// The content types ImageIO can read.
+    public static let readableContentTypes: Set<String> =
+        Set(CGImageSourceCopyTypeIdentifiers() as? [String] ?? [])
+
+    /// Whether ImageIO can read a file with this path extension. SVG, for one, it cannot.
+    public static func canRead(url: URL) -> Bool {
+        guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
+
+        return readableContentTypes.contains(type.identifier)
+    }
+
     // MARK: - Full metadata read
 
     private static let iptcExtensionNamespace = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
