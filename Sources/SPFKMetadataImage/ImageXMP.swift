@@ -214,66 +214,17 @@ public enum ImageXMP {
         case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, isAlternateText: Bool)
     }
 
-    /// Handles both `rdf:Bag` and `rdf:Seq` array tags. `CGImageMetadataTagCopyValue` returns an
-    /// array of *nested* `CGImageMetadataTag` objects rather than strings - a `value as? [String]`
-    /// cast silently yields `[]` - and a single-element field can come back as a bare `CFString`.
-    private static func arrayValue(_ metadata: CGImageMetadata, path: String) -> [String] {
-        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
-              let value = CGImageMetadataTagCopyValue(tag)
-        else { return [] }
-
-        if let tags = value as? [CGImageMetadataTag] {
-            return tags.compactMap { CGImageMetadataTagCopyValue($0) as? String }
-        }
-        if let array = value as? [String] {
-            return array
-        }
-        if let single = value as? String {
-            return [single]
-        }
-        return []
-    }
-
-    /// Reads an `rdf:Alt` (language-alternative) field. Same nested-tag shape as the array fields,
-    /// one entry per language; the first is `x-default`, the only language this package writes.
-    private static func alternateTextValue(_ metadata: CGImageMetadata, path: String) -> String? {
-        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
-              let value = CGImageMetadataTagCopyValue(tag)
-        else { return nil }
-
-        if let tags = value as? [CGImageMetadataTag] {
-            return tags.compactMap { CGImageMetadataTagCopyValue($0) as? String }.first
-        }
-        return value as? String
-    }
-
-    /// Reads a plain (non-alternate-text) scalar string field. These come back as a bare `String`,
-    /// not array-wrapped like the array or alternate-text fields.
-    private static func scalarStringValue(_ metadata: CGImageMetadata, path: String) -> String? {
-        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString) else { return nil }
-        return CGImageMetadataTagCopyValue(tag) as? String
-    }
-
-    /// Reads a plain scalar integer field -- `xmp:Rating`.
-    private static func scalarIntValue(_ metadata: CGImageMetadata, path: String) -> Int? {
-        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
-              let value = CGImageMetadataTagCopyValue(tag)
-        else { return nil }
-
-        if let number = value as? NSNumber { return number.intValue }
-        if let string = value as? String { return Int(string) }
-        return nil
-    }
-
     /// Builds a metadata object from `writes` and merges it onto the file, preserving the EXIF and
     /// XMP this package does not model. Writes to a temporary file in the same directory as `url`
     /// and atomically replaces the original, so a failure mid-write cannot corrupt it.
     ///
     /// `namespacesToRegister` lets a removal address a namespace the file's own metadata object has
-    /// no prefix for.
+    /// no prefix for. `replacingPaths` are removed like `clearingPaths`, but only when something is
+    /// being cleared: a merging write starts from an empty object and has nothing to remove.
     static func writeTags(
         _ writes: [MetadataWrite],
         clearingPaths: [String] = [],
+        replacingPaths: [String] = [],
         namespacesToRegister: [(namespace: String, prefix: String)] = [],
         url: URL
     ) throws {
