@@ -196,7 +196,20 @@ public enum ImageXMP {
             ))
         }
 
-        try writeTags(writes, clearingPaths: clearing.map(\.path), url: url)
+        // The bridge sets a string onto an existing `rdf:Alt` without changing its type, which
+        // ImageIO then writes back empty or raises on while copying. Removing the container first
+        // makes the bridge build a fresh one.
+        var rewritten: [XMPField] = []
+        if metadata.title != nil { rewritten.append(.title) }
+        if metadata.description != nil { rewritten.append(.description) }
+        if metadata.copyright != nil { rewritten.append(.copyright) }
+
+        try writeTags(
+            writes,
+            clearingPaths: clearing.map(\.path),
+            replacingPaths: rewritten.filter { !clearing.contains($0) }.map(\.path),
+            url: url
+        )
     }
 
     // MARK: - Private
@@ -268,7 +281,7 @@ public enum ImageXMP {
                 registeredPrefixes.insert(prefix)
             }
 
-            for path in clearingPaths {
+            for path in clearingPaths + replacingPaths {
                 // Returns false when the tag was absent, the ordinary case for an empty field.
                 CGImageMetadataRemoveTagWithPath(metadata, nil, path as CFString)
             }
