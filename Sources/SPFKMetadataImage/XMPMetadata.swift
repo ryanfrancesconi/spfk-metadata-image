@@ -8,7 +8,7 @@ import Foundation
 ///
 /// Format-neutral by design: `ImageXMP` reads and writes it through ImageIO, `VideoXMP` (in
 /// `spfk-metadata-xmp`) through the Adobe toolkit, and both address the identical ``XMPField``
-/// set — which is what stops a video and an image from supporting different fields. `nil` means
+/// set - which is what stops a video and an image from supporting different fields. `nil` means
 /// the field is absent from the file, distinct from an empty string or `0`.
 public struct XMPMetadata: Hashable, Sendable {
     public var keywords: [String]
@@ -20,14 +20,14 @@ public struct XMPMetadata: Hashable, Sendable {
     public var state: String?
     public var country: String?
 
-    /// A finer-grained place name than `city`/`state`/`country` — a neighborhood or a landmark.
+    /// A finer-grained place name than `city`/`state`/`country` - a neighborhood or a landmark.
     public var subLocation: String?
 
     /// 0-5.
     public var rating: Int?
     public var label: String?
 
-    /// A hex swatch, e.g. `"#F37500"` — Lightroom's Custom Color label, which sits in the same
+    /// A hex swatch, e.g. `"#F37500"` - Lightroom's Custom Color label, which sits in the same
     /// picker as its five named ones. `label` still carries the user-facing name either way.
     public var labelColor: String?
     public var accessibilityAltText: String?

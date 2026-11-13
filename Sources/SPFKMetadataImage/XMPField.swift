@@ -5,7 +5,7 @@ import Foundation
 /// One writable field of ``XMPMetadata``, identified by its XMP path.
 ///
 /// Lets a caller say "empty this field" as distinct from "leave it alone", which ``XMPMetadata``
-/// alone cannot express — `nil`/`[]` there means "no new value". `path` must stay the path
+/// alone cannot express - `nil`/`[]` there means "no new value". `path` must stay the path
 /// `ImageXMP.readMetadata(from:)` reads from: a clear targeting a different one looks exactly
 /// like the clear silently not working.
 public enum XMPField: String, Sendable, CaseIterable {
@@ -75,7 +75,7 @@ public enum XMPField: String, Sendable, CaseIterable {
     /// Alternate-text fields are given as the bare path deliberately: removal takes the container
     /// rather than one language entry, so clearing drops every language instead of leaving an
     /// `rdf:Alt` holding ones the user cannot see. Writing them still uses the `[x-default]`-
-    /// indexed path — see ``ImageXMP``.
+    /// indexed path - see ``ImageXMP``.
     public var path: String {
         switch self {
         case .keywords: "dc:subject"

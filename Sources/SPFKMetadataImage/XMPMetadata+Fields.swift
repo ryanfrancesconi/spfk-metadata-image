@@ -3,7 +3,7 @@
 import Foundation
 
 /// Field-keyed access to the same values the named properties expose, so a writer addressing XMP
-/// generically — by namespace and name, as the Adobe toolkit does for video — can map the whole
+/// generically - by namespace and name, as the Adobe toolkit does for video - can map the whole
 /// set in one loop rather than restating a per-field switch that can drift from this one.
 extension XMPMetadata {
     /// This field's value as XMP holds it: zero values when absent, one for a scalar, many for an

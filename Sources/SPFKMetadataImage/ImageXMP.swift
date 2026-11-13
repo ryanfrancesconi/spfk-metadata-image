@@ -10,7 +10,7 @@ import UniformTypeIdentifiers
 /// neither write XMP into a HEIC nor read back what ImageIO wrote there. `spfk-metadata-xmp`
 /// stays the right tool for JPEG, TIFF-based RAW and its audio/video Dynamic Media use case.
 ///
-/// **Never set an `rdf:Alt` field at a bare path** — a tag set at `"dc:rights"` crashes the
+/// **Never set an `rdf:Alt` field at a bare path** - a tag set at `"dc:rights"` crashes the
 /// process, where the language-indexed `"dc:rights[x-default]"` is safe. Use
 /// `CGImageMetadataSetValueMatchingImageProperty` for fields ImageIO exposes a classic-property
 /// crosswalk for, and the `[x-default]`-indexed path for those it does not. Bare paths are fine
@@ -28,7 +28,7 @@ public enum ImageXMP {
             case let .destinationCreationFailed(url):
                 "Could not create an image destination for \(url.path)"
             case let .writeFailed(url, underlying):
-                "Failed to write image metadata to \(url.path)" + (underlying.map { " — \($0.localizedDescription)" } ?? "")
+                "Failed to write image metadata to \(url.path)" + (underlying.map { " - \($0.localizedDescription)" } ?? "")
             }
         }
     }
@@ -47,7 +47,7 @@ public enum ImageXMP {
 
     /// Whether ImageIO can write metadata back to a file with this path extension.
     ///
-    /// **Readable does not imply writable** — WebP reads in full and has no encoder at all, so
+    /// **Readable does not imply writable** - WebP reads in full and has no encoder at all, so
     /// every write to one fails. ``writeMetadata(_:clearing:url:)`` throws for exactly the files
     /// this refuses. Answered by extension rather than by opening the file, since it is asked per
     /// row and per field.
@@ -77,7 +77,7 @@ public enum ImageXMP {
     private static let photoshopNamespace = "http://ns.adobe.com/photoshop/1.0/"
     private static let photoshopPrefix = "photoshop"
 
-    /// Reads every field this package supports in one pass — one file open, one metadata copy.
+    /// Reads every field this package supports in one pass - one file open, one metadata copy.
     public static func readMetadata(from url: URL) throws -> XMPMetadata {
         // A source is created for a file it cannot read; only its status says the read failed.
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -114,7 +114,7 @@ public enum ImageXMP {
     }
 
     /// Writes every non-empty/non-nil field in `metadata`, preserving everything else already on
-    /// the file. `[]`/`nil` means **leave the existing value alone**, not clear it — `clearing`
+    /// the file. `[]`/`nil` means **leave the existing value alone**, not clear it - `clearing`
     /// is what expresses the difference `XMPMetadata` cannot.
     ///
     /// - Parameter clearing: fields to remove from the file. A field listed here is **not**
@@ -215,8 +215,8 @@ public enum ImageXMP {
     }
 
     /// Handles both `rdf:Bag` and `rdf:Seq` array tags. `CGImageMetadataTagCopyValue` returns an
-    /// array of *nested* `CGImageMetadataTag` objects rather than strings — a `value as? [String]`
-    /// cast silently yields `[]` — and a single-element field can come back as a bare `CFString`.
+    /// array of *nested* `CGImageMetadataTag` objects rather than strings - a `value as? [String]`
+    /// cast silently yields `[]` - and a single-element field can come back as a bare `CFString`.
     private static func arrayValue(_ metadata: CGImageMetadata, path: String) -> [String] {
         guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
               let value = CGImageMetadataTagCopyValue(tag)
@@ -301,7 +301,7 @@ public enum ImageXMP {
             {
                 metadata = mutableCopy
             } else {
-                // No XMP on the file at all — nothing to remove.
+                // No XMP on the file at all - nothing to remove.
                 metadata = CGImageMetadataCreateMutable()
             }
 
