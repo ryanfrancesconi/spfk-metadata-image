@@ -33,9 +33,6 @@ public enum ImageXMP {
         }
     }
 
-    private static let dublinCoreNamespace = "http://purl.org/dc/elements/1.1/"
-    private static let dublinCorePrefix = "dc"
-
     // MARK: - Write capability
 
     /// The content types ImageIO can write, which is a strict subset of what it can read.
@@ -70,13 +67,6 @@ public enum ImageXMP {
 
     // MARK: - Full metadata read
 
-    private static let iptcExtensionNamespace = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
-    private static let iptcExtensionPrefix = "Iptc4xmpCore"
-    static let xmpBasicNamespace = "http://ns.adobe.com/xap/1.0/"
-    static let xmpBasicPrefix = "xmp"
-    private static let photoshopNamespace = "http://ns.adobe.com/photoshop/1.0/"
-    private static let photoshopPrefix = "photoshop"
-
     /// Reads every field this package supports in one pass - one file open, one metadata copy.
     public static func readMetadata(from url: URL) throws -> XMPMetadata {
         // A source is created for a file it cannot read; only its status says the read failed.
@@ -95,26 +85,17 @@ public enum ImageXMP {
 
     /// Every field this package supports, from metadata already in memory.
     static func readMetadata(from metadata: CGImageMetadata) -> XMPMetadata {
-        XMPMetadata(
-            keywords: arrayValue(metadata, path: "dc:subject"),
-            creators: arrayValue(metadata, path: "dc:creator"),
-            title: alternateTextValue(metadata, path: "dc:title"),
-            description: alternateTextValue(metadata, path: "dc:description"),
-            copyright: alternateTextValue(metadata, path: "dc:rights"),
-            city: scalarStringValue(metadata, path: "photoshop:City"),
-            state: scalarStringValue(metadata, path: "photoshop:State"),
-            country: scalarStringValue(metadata, path: "photoshop:Country"),
-            subLocation: scalarStringValue(metadata, path: "Iptc4xmpCore:Location"),
-            rating: scalarIntValue(metadata, path: "xmp:Rating"),
-            label: scalarStringValue(metadata, path: "xmp:Label"),
-            labelColor: scalarStringValue(metadata, path: "photoshop:LabelColor"),
-            accessibilityAltText: alternateTextValue(metadata, path: "Iptc4xmpCore:AltTextAccessibility"),
-            accessibilityDescription: alternateTextValue(metadata, path: "Iptc4xmpCore:ExtDescrAccessibility")
-        )
+        var result = XMPMetadata()
+
+        for field in XMPField.allCases {
+            result[field] = values(of: field, in: metadata)
+        }
+
+        return result
     }
 
-    /// Writes every non-empty/non-nil field in `metadata`, preserving everything else already on
-    /// the file. `[]`/`nil` means **leave the existing value alone**, not clear it - `clearing`
+    /// Writes every non-empty field in `metadata`, preserving everything else already on the
+    /// file. An empty field means **leave the existing value alone**, not clear it - `clearing`
     /// is what expresses the difference `XMPMetadata` cannot.
     ///
     /// - Parameter clearing: fields to remove from the file. A field listed here is **not**
@@ -125,106 +106,83 @@ public enum ImageXMP {
         url: URL
     ) throws {
         var writes: [MetadataWrite] = []
-        if metadata.keywords.isNotEmpty, !clearing.contains(.keywords) {
-            writes.append(.array(name: "subject", type: .arrayUnordered, value: metadata.keywords as CFArray))
-        }
-        if metadata.creators.isNotEmpty, !clearing.contains(.creators) {
-            writes.append(.array(name: "creator", type: .arrayOrdered, value: metadata.creators as CFArray))
-        }
-        if let title = metadata.title, !clearing.contains(.title) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCObjectName, value: title as CFString
-            ))
-        }
-        if let description = metadata.description, !clearing.contains(.description) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCaptionAbstract, value: description as CFString
-            ))
-        }
-        if let copyright = metadata.copyright, !clearing.contains(.copyright) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCopyrightNotice, value: copyright as CFString
-            ))
-        }
-        if let city = metadata.city, !clearing.contains(.city) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCity, value: city as CFString
-            ))
-        }
-        if let state = metadata.state, !clearing.contains(.state) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCProvinceState, value: state as CFString
-            ))
-        }
-        if let country = metadata.country, !clearing.contains(.country) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCCountryPrimaryLocationName, value: country as CFString
-            ))
-        }
-        if let subLocation = metadata.subLocation, !clearing.contains(.subLocation) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCSubLocation, value: subLocation as CFString
-            ))
-        }
-        if let rating = metadata.rating, !clearing.contains(.rating) {
-            writes.append(.scalarProperty(
-                dictionary: kCGImagePropertyIPTCDictionary, property: kCGImagePropertyIPTCStarRating, value: rating as CFNumber
-            ))
-        }
-        if let label = metadata.label, !clearing.contains(.label) {
-            writes.append(.namespacedTag(
-                namespace: xmpBasicNamespace as CFString, prefix: xmpBasicPrefix as CFString,
-                name: "Label", value: label as CFString, isAlternateText: false
-            ))
-        }
-        if let labelColor = metadata.labelColor, !clearing.contains(.labelColor) {
-            writes.append(.namespacedTag(
-                namespace: photoshopNamespace as CFString, prefix: photoshopPrefix as CFString,
-                name: "LabelColor", value: labelColor as CFString, isAlternateText: false
-            ))
-        }
-        if let altText = metadata.accessibilityAltText, !clearing.contains(.accessibilityAltText) {
-            writes.append(.namespacedTag(
-                namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
-                name: "AltTextAccessibility", value: altText as CFString, isAlternateText: true
-            ))
-        }
-        if let extendedDescription = metadata.accessibilityDescription, !clearing.contains(.accessibilityDescription) {
-            writes.append(.namespacedTag(
-                namespace: iptcExtensionNamespace as CFString, prefix: iptcExtensionPrefix as CFString,
-                name: "ExtDescrAccessibility", value: extendedDescription as CFString, isAlternateText: true
-            ))
-        }
+        var replacingPaths: [String] = []
 
-        // The bridge sets a string onto an existing `rdf:Alt` without changing its type, which
-        // ImageIO then writes back empty or raises on while copying. Removing the container first
-        // makes the bridge build a fresh one.
-        var rewritten: [XMPField] = []
-        if metadata.title != nil { rewritten.append(.title) }
-        if metadata.description != nil { rewritten.append(.description) }
-        if metadata.copyright != nil { rewritten.append(.copyright) }
+        for field in XMPField.allCases {
+            let values = metadata[field]
+
+            if field.isStructField, clearing.contains(field) || values.isNotEmpty {
+                throw ImageXMPError.writeFailed(url, underlying: UnsupportedFieldShape(field: field))
+            }
+
+            guard values.isNotEmpty, !clearing.contains(field) else { continue }
+
+            try writes.append(write(field, values: values, url: url))
+
+            if field.removesContainerBeforeWrite {
+                replacingPaths.append(field.path)
+            }
+        }
 
         try writeTags(
             writes,
-            clearingPaths: clearing.map(\.path),
-            replacingPaths: rewritten.filter { !clearing.contains($0) }.map(\.path),
+            clearingPaths: XMPField.allCases.filter(clearing.contains).map(\.path),
+            replacingPaths: replacingPaths,
             url: url
         )
     }
 
     // MARK: - Private
 
-    /// Three write mechanisms, chosen per field:
-    /// - `.array` hand-builds a `dc:`-namespaced tag, the only safe way found for `rdf:Bag`/
-    ///   `rdf:Seq` fields.
+    /// Two write mechanisms, chosen per field by ``XMPField``:
     /// - `.scalarProperty` goes through the `CGImageMetadataSetValueMatchingImageProperty` bridge,
-    ///   for any field with a classic-property crosswalk.
-    /// - `.namespacedTag` builds a tag under a registered namespace, for fields with no crosswalk.
-    ///   `isAlternateText` selects the `[x-default]`-indexed path `rdf:Alt` fields require.
+    ///   for a field with a crosswalk.
+    /// - `.namespacedTag` builds a tag under its namespace, at the shape `form` names.
     enum MetadataWrite {
-        case array(name: String, type: CGImageMetadataType, value: CFArray)
         case scalarProperty(dictionary: CFString, property: CFString, value: CFTypeRef)
-        case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, isAlternateText: Bool)
+        case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, form: TagForm)
+    }
+
+    enum TagForm {
+        case scalar
+        /// Set at the `[x-default]`-indexed path. A tag at the bare path of an `rdf:Alt` crashes.
+        case alternateText
+        case array(CGImageMetadataType)
+    }
+
+    struct UnsupportedFieldShape: Error {
+        let field: XMPField
+    }
+
+    private static func write(_ field: XMPField, values: [String], url: URL) throws -> MetadataWrite {
+        let value: CFTypeRef
+
+        if field.shape == .integer {
+            guard let number = Int(values[0]) else {
+                throw ImageXMPError.writeFailed(url, underlying: nil)
+            }
+            value = number as CFNumber
+        } else if field.isArray {
+            value = values as CFArray
+        } else {
+            value = values[0] as CFString
+        }
+
+        if let crosswalk = field.crosswalk {
+            return .scalarProperty(dictionary: kCGImagePropertyIPTCDictionary, property: crosswalk, value: value)
+        }
+
+        let form: TagForm = switch field.shape {
+        case .text, .integer, .bool, .struct: .scalar
+        case .langAlt: .alternateText
+        case .bag: .array(.arrayUnordered)
+        case .seq: .array(.arrayOrdered)
+        }
+
+        return .namespacedTag(
+            namespace: field.namespace as CFString, prefix: field.prefix as CFString,
+            name: field.localName, value: value, form: form
+        )
     }
 
     /// Builds a metadata object from `writes` and merges it onto the file, preserving the EXIF and
@@ -312,36 +270,15 @@ public enum ImageXMP {
             }
         }
 
-        // Only the manual `CGImageMetadataTagCreate` paths need a registered namespace; the
-        // `.scalarProperty` bridge already knows the namespace of any classic property.
-        if writes.contains(where: { if case .array = $0 { true } else { false } }) {
-            var registrationError: Unmanaged<CFError>?
-            guard CGImageMetadataRegisterNamespaceForPrefix(
-                metadata, dublinCoreNamespace as CFString, dublinCorePrefix as CFString, &registrationError
-            ) else {
-                throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
-            }
-        }
-
         for write in writes {
             switch write {
-            case let .array(name, type, value):
-                guard let cgTag = CGImageMetadataTagCreate(
-                    dublinCoreNamespace as CFString, dublinCorePrefix as CFString, name as CFString, type, value
-                ) else {
-                    throw ImageXMPError.writeFailed(url, underlying: nil)
-                }
-
-                guard CGImageMetadataSetTagWithPath(metadata, nil, "dc:\(name)" as CFString, cgTag) else {
-                    throw ImageXMPError.writeFailed(url, underlying: nil)
-                }
-
             case let .scalarProperty(dictionary, property, value):
                 guard CGImageMetadataSetValueMatchingImageProperty(metadata, dictionary, property, value) else {
                     throw ImageXMPError.writeFailed(url, underlying: nil)
                 }
 
-            case let .namespacedTag(namespace, prefix, name, value, isAlternateText):
+            case let .namespacedTag(namespace, prefix, name, value, form):
+                // The bridge already knows the namespace of any classic property; a tag does not.
                 let prefixString = prefix as String
                 if !registeredPrefixes.contains(prefixString) {
                     var registrationError: Unmanaged<CFError>?
@@ -351,11 +288,13 @@ public enum ImageXMP {
                     registeredPrefixes.insert(prefixString)
                 }
 
-                guard let cgTag = CGImageMetadataTagCreate(namespace, prefix, name as CFString, .default, value) else {
+                let type: CGImageMetadataType = if case let .array(arrayType) = form { arrayType } else { .default }
+
+                guard let cgTag = CGImageMetadataTagCreate(namespace, prefix, name as CFString, type, value) else {
                     throw ImageXMPError.writeFailed(url, underlying: nil)
                 }
 
-                let path = isAlternateText ? "\(prefixString):\(name)[x-default]" : "\(prefixString):\(name)"
+                let path = if case .alternateText = form { "\(prefixString):\(name)[x-default]" } else { "\(prefixString):\(name)" }
                 guard CGImageMetadataSetTagWithPath(metadata, nil, path as CFString, cgTag) else {
                     throw ImageXMPError.writeFailed(url, underlying: nil)
                 }

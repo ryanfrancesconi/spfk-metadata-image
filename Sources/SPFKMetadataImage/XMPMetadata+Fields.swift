@@ -2,56 +2,28 @@
 
 import Foundation
 
-/// Field-keyed access to the same values the named properties expose, so a writer addressing XMP
-/// generically - by namespace and name, as the Adobe toolkit does for video - can map the whole
-/// set in one loop rather than restating a per-field switch that can drift from this one.
 extension XMPMetadata {
-    /// This field's value as XMP holds it: zero values when absent, one for a scalar, many for an
-    /// array. Empty means "no value", which a writer turns into a removal.
+    /// This field's value as XMP holds it; the same as `self[field]`.
     public func values(for field: XMPField) -> [String] {
-        switch field {
-        case .keywords: keywords
-        case .creators: creators
-        case .title: [title].compactMap(\.self)
-        case .description: [description].compactMap(\.self)
-        case .copyright: [copyright].compactMap(\.self)
-        case .city: [city].compactMap(\.self)
-        case .state: [state].compactMap(\.self)
-        case .country: [country].compactMap(\.self)
-        case .subLocation: [subLocation].compactMap(\.self)
-        case .rating: [rating.map(String.init)].compactMap(\.self)
-        case .label: [label].compactMap(\.self)
-        case .labelColor: [labelColor].compactMap(\.self)
-        case .accessibilityAltText: [accessibilityAltText].compactMap(\.self)
-        case .accessibilityDescription: [accessibilityDescription].compactMap(\.self)
-        }
+        self[field]
     }
 
-    /// Builds metadata from field-keyed values, the inverse of ``values(for:)``.
+    /// Builds metadata from field-keyed values, keeping only what each field's shape can hold.
     ///
-    /// A missing or empty entry leaves the field `nil`/empty, so a caller can pass only what it
-    /// found without having to distinguish "absent" from "not looked for".
+    /// An empty scalar, and an `integer` field that does not parse, read as absent. A scalar keeps
+    /// its first value only.
     public init(fieldValues: [XMPField: [String]]) {
-        func first(_ field: XMPField) -> String? {
-            guard let value = fieldValues[field]?.first, value.isNotEmpty else { return nil }
-            return value
-        }
+        self.init()
 
-        self.init(
-            keywords: fieldValues[.keywords] ?? [],
-            creators: fieldValues[.creators] ?? [],
-            title: first(.title),
-            description: first(.description),
-            copyright: first(.copyright),
-            city: first(.city),
-            state: first(.state),
-            country: first(.country),
-            subLocation: first(.subLocation),
-            rating: first(.rating).flatMap { Int($0) },
-            label: first(.label),
-            labelColor: first(.labelColor),
-            accessibilityAltText: first(.accessibilityAltText),
-            accessibilityDescription: first(.accessibilityDescription)
-        )
+        for (field, values) in fieldValues {
+            switch field.shape {
+            case .bag, .seq:
+                self[field] = values
+            case .integer:
+                self[field] = values.first.flatMap { Int($0) }.map { [String($0)] } ?? []
+            case .text, .langAlt, .bool, .struct:
+                self[field] = values.first.flatMap { $0.isEmpty ? nil : [$0] } ?? []
+            }
+        }
     }
 }

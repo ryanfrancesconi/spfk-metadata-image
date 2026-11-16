@@ -13,6 +13,11 @@ extension ImageXMP {
 
     /// Replaces the whole `dc:subject` keyword set, preserving all other existing metadata.
     public static func setKeywords(_ keywords: [String], url: URL) throws {
-        try writeTags([.array(name: "subject", type: .arrayUnordered, value: keywords as CFArray)], url: url)
+        let field = XMPField.keywords
+
+        try writeTags([.namespacedTag(
+            namespace: field.namespace as CFString, prefix: field.prefix as CFString,
+            name: field.localName, value: keywords as CFArray, form: .array(.arrayUnordered)
+        )], url: url)
     }
 }

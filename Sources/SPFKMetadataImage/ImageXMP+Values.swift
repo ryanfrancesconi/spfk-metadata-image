@@ -55,3 +55,39 @@ extension ImageXMP {
         return nil
     }
 }
+
+extension ImageXMP {
+    /// One field's value, read by its shape.
+    static func values(of field: XMPField, in metadata: CGImageMetadata) -> [String] {
+        let path = field.path
+
+        switch field.shape {
+        case .bag, .seq:
+            return arrayValue(metadata, path: path)
+        case .langAlt:
+            return alternateTextValue(metadata, path: path).map { [$0] } ?? []
+        case .text, .struct:
+            return scalarStringValue(metadata, path: path).map { [$0] } ?? []
+        case .integer:
+            return scalarIntValue(metadata, path: path).map { [String($0)] } ?? []
+        case .bool:
+            return boolValue(metadata, path: path).map { [$0 ? "True" : "False"] } ?? []
+        }
+    }
+
+    /// Reads an XMP Boolean, which ImageIO may hand back as text or as a number.
+    static func boolValue(_ metadata: CGImageMetadata, path: String) -> Bool? {
+        guard let tag = CGImageMetadataCopyTagWithPath(metadata, nil, path as CFString),
+              let value = CGImageMetadataTagCopyValue(tag)
+        else { return nil }
+
+        if let string = value as? String {
+            switch string.lowercased() {
+            case "true": return true
+            case "false": return false
+            default: return nil
+            }
+        }
+        return (value as? NSNumber)?.boolValue
+    }
+}

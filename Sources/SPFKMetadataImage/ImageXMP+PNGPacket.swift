@@ -21,8 +21,8 @@ extension ImageXMP {
         try copyImageSource(
             source, type: type,
             writes: [.namespacedTag(
-                namespace: xmpBasicNamespace as CFString, prefix: xmpBasicPrefix as CFString,
-                name: "MetadataDate", value: now as CFString, isAlternateText: false
+                namespace: XMPNamespace.xmpBasic.uri as CFString, prefix: XMPNamespace.xmpBasic.prefix as CFString,
+                name: "MetadataDate", value: now as CFString, form: .scalar
             )],
             clearingPaths: [], replacingPaths: [], namespacesToRegister: [], url: url
         )

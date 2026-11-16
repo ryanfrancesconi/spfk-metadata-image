@@ -20,7 +20,7 @@ extension ImageXMP {
             if let value {
                 writes.append(.namespacedTag(
                     namespace: namespace as CFString, prefix: prefix as CFString,
-                    name: name, value: value as CFString, isAlternateText: false
+                    name: name, value: value as CFString, form: .scalar
                 ))
             } else {
                 clearingPaths.append("\(prefix):\(name)")
