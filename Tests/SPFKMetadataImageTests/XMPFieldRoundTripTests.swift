@@ -93,13 +93,7 @@ struct XMPFieldRoundTripTests {
             try ImageXMP.writeMetadata(metadata, clearing: others, url: url)
             let written = try ImageXMP.readMetadata(from: url)[field]
 
-            if still == .packetlessPNG, field == .creators {
-                withKnownIssue("ImageIO reads only the first entry of a PNG's dc:creator, though the file holds both") {
-                    #expect(written == Self.sample(for: field))
-                }
-            } else {
-                #expect(written == Self.sample(for: field), "\(field) on \(still)")
-            }
+            #expect(written == Self.sample(for: field), "\(field) on \(still)")
 
             try ImageXMP.writeMetadata(XMPMetadata(), clearing: Set(XMPField.allCases), url: url)
             let cleared = try ImageXMP.readMetadata(from: url)[field]

@@ -106,4 +106,45 @@ struct ImageXMPPNGTests {
         #expect(read.city == "Lisbon")
         #expect(read.keywords == ["tram"])
     }
+
+    /// ImageIO's merged read of a PNG gives one creator however many the packet holds.
+    @Test func everyCreatorReadsBack() throws {
+        let url = try Self.makePacketlessPNG(named: "png-creators")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(XMPMetadata(creators: ["First", "Second"]), url: url)
+
+        #expect(try ImageXMP.readMetadata(from: url).creators == ["First", "Second"])
+    }
+
+    /// A clearing write starts from the file's own metadata, so it must not write back the merged
+    /// read's single creator.
+    @Test func clearingAnotherFieldKeepsEveryCreator() throws {
+        let url = try Self.makePacketlessPNG(named: "png-creators-clear")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(XMPMetadata(creators: ["First", "Second"], title: "Title"), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.title], url: url)
+
+        let packet = try #require(try ImageXMP.pngXMPPacket(url: url))
+        let fromPacket = try #require(ImageXMP.readMetadata(fromPacket: packet))
+
+        #expect(fromPacket.creators == ["First", "Second"])
+        #expect(fromPacket.title == nil)
+    }
+
+    /// A merging write of another field leaves the packet's creators as they were.
+    @Test func mergingAnotherFieldKeepsEveryCreator() throws {
+        let url = try Self.makePacketlessPNG(named: "png-creators-merge")
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try ImageXMP.writeMetadata(XMPMetadata(creators: ["First", "Second"]), url: url)
+        try ImageXMP.writeMetadata(XMPMetadata(keywords: ["tram"]), url: url)
+
+        let packet = try #require(try ImageXMP.pngXMPPacket(url: url))
+        let fromPacket = try #require(ImageXMP.readMetadata(fromPacket: packet))
+
+        #expect(fromPacket.creators == ["First", "Second"])
+        #expect(fromPacket.keywords == ["tram"])
+    }
 }

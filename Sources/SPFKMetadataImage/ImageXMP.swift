@@ -80,7 +80,16 @@ public enum ImageXMP {
             return XMPMetadata()
         }
 
-        return readMetadata(from: metadata)
+        var result = readMetadata(from: metadata)
+
+        if let packet = try pngPacketMetadata(source: source, url: url) {
+            for field in XMPField.allCases {
+                let values = values(of: field, in: packet)
+                if values.isNotEmpty { result[field] = values }
+            }
+        }
+
+        return result
     }
 
     /// Every field this package supports, from metadata already in memory.
@@ -239,9 +248,22 @@ public enum ImageXMP {
         let shouldMerge: Bool
         var registeredPrefixes: Set<String> = []
 
+        // Both paths start from ImageIO's view of a PNG, which holds one `dc:creator`.
+        let packet = try pngPacketMetadata(source: source, url: url)
+
+        func restorePNGPacketFields(into metadata: CGMutableImageMetadata) {
+            guard let packet else { return }
+
+            for field in XMPField.allCases {
+                guard let tag = CGImageMetadataCopyTagWithPath(packet, nil, field.path as CFString) else { continue }
+                CGImageMetadataSetTagWithPath(metadata, nil, field.path as CFString, tag)
+            }
+        }
+
         if clearingPaths.isEmpty {
             metadata = CGImageMetadataCreateMutable()
             shouldMerge = true
+            restorePNGPacketFields(into: metadata)
         } else {
             if let existing = CGImageSourceCopyMetadataAtIndex(source, 0, nil),
                let mutableCopy = CGImageMetadataCreateMutableCopy(existing)
@@ -263,6 +285,8 @@ public enum ImageXMP {
                 }
                 registeredPrefixes.insert(prefix)
             }
+
+            restorePNGPacketFields(into: metadata)
 
             for path in clearingPaths + replacingPaths {
                 // Returns false when the tag was absent, the ordinary case for an empty field.
