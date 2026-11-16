@@ -24,6 +24,29 @@ public enum XMPField: String, Sendable, CaseIterable {
     case labelColor
     case accessibilityAltText
     case accessibilityDescription
+    case headline
+    case jobTitle
+    case descriptionWriter
+    case contactEmail
+    case contactPhone
+    case contactWebsite
+    case contactAddress
+    case contactCity
+    case contactState
+    case contactPostalCode
+    case contactCountry
+    case copyrightStatus
+    case usageTerms
+    case webStatement
+    case credit
+    case source
+    case countryCode
+    case jobID
+    case instructions
+    case event
+    case personsShown
+    case organizationsShown
+    case genre
 
     /// The XMP value type a field holds.
     public enum Shape: Hashable, Sendable {
@@ -75,7 +98,39 @@ public enum XMPField: String, Sendable, CaseIterable {
         case .labelColor: Entry(namespace: .photoshop, name: "LabelColor", shape: .text)
         case .accessibilityAltText: Entry(namespace: .iptcCore, name: "AltTextAccessibility", shape: .langAlt)
         case .accessibilityDescription: Entry(namespace: .iptcCore, name: "ExtDescrAccessibility", shape: .langAlt)
+        case .headline: Entry(namespace: .photoshop, name: "Headline", shape: .text, crosswalk: kCGImagePropertyIPTCHeadline)
+        case .jobTitle: Entry(namespace: .photoshop, name: "AuthorsPosition", shape: .text, crosswalk: kCGImagePropertyIPTCBylineTitle)
+        case .descriptionWriter:
+            Entry(namespace: .photoshop, name: "CaptionWriter", shape: .text, crosswalk: kCGImagePropertyIPTCWriterEditor)
+        case .contactEmail: Self.contact("CiEmailWork")
+        case .contactPhone: Self.contact("CiTelWork")
+        case .contactWebsite: Self.contact("CiUrlWork")
+        case .contactAddress: Self.contact("CiAdrExtadr")
+        case .contactCity: Self.contact("CiAdrCity")
+        case .contactState: Self.contact("CiAdrRegion")
+        case .contactPostalCode: Self.contact("CiAdrPcode")
+        case .contactCountry: Self.contact("CiAdrCtry")
+        case .copyrightStatus: Entry(namespace: .xmpRights, name: "Marked", shape: .bool)
+        case .usageTerms: Entry(namespace: .xmpRights, name: "UsageTerms", shape: .langAlt)
+        case .webStatement: Entry(namespace: .xmpRights, name: "WebStatement", shape: .text)
+        case .credit: Entry(namespace: .photoshop, name: "Credit", shape: .text, crosswalk: kCGImagePropertyIPTCCredit)
+        case .source: Entry(namespace: .photoshop, name: "Source", shape: .text, crosswalk: kCGImagePropertyIPTCSource)
+        case .countryCode:
+            Entry(namespace: .iptcCore, name: "CountryCode", shape: .text, crosswalk: kCGImagePropertyIPTCCountryPrimaryLocationCode)
+        case .jobID:
+            Entry(namespace: .photoshop, name: "TransmissionReference", shape: .text, crosswalk: kCGImagePropertyIPTCOriginalTransmissionReference)
+        case .instructions:
+            Entry(namespace: .photoshop, name: "Instructions", shape: .text, crosswalk: kCGImagePropertyIPTCSpecialInstructions)
+        case .event: Entry(namespace: .iptcExtension, name: "Event", shape: .langAlt)
+        case .personsShown: Entry(namespace: .iptcExtension, name: "PersonInImage", shape: .bag)
+        case .organizationsShown: Entry(namespace: .iptcExtension, name: "OrganisationInImageName", shape: .bag)
+        case .genre: Entry(namespace: .iptcCore, name: "IntellectualGenre", shape: .text)
         }
+    }
+
+    /// One child of `Iptc4xmpCore:CreatorContactInfo`.
+    private static func contact(_ child: String) -> Entry {
+        Entry(namespace: .iptcCore, name: child, shape: .struct(parent: "CreatorContactInfo", child: child))
     }
 
     // MARK: - Description
@@ -126,6 +181,19 @@ public enum XMPField: String, Sendable, CaseIterable {
     public var isStructField: Bool {
         if case .struct = shape { return true }
         return false
+    }
+
+    /// The struct's own name, local to ``namespace``, for a struct field.
+    public var structName: String? {
+        if case let .struct(parent, _) = shape { return parent }
+        return nil
+    }
+
+    /// A second path ImageIO reports this field's value at on some types, which a write must keep
+    /// in step. HEIC and TIFF read `photoshop:Headline` back at `Iptc4xmpExt:Headline` too, and a
+    /// write starting from a copy of the file's metadata stores that copy.
+    var imageIOMirror: (namespace: XMPNamespace, name: String)? {
+        self == .headline ? (.iptcExtension, "Headline") : nil
     }
 }
 

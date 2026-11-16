@@ -116,15 +116,28 @@ public enum ImageXMP {
     ) throws {
         var writes: [MetadataWrite] = []
         var replacingPaths: [String] = []
+        var structChildren: [(field: XMPField, value: String?)] = []
 
         for field in XMPField.allCases {
             let values = metadata[field]
+            let isCleared = clearing.contains(field)
+            let isTouched = isCleared || values.isNotEmpty
 
-            if field.isStructField, clearing.contains(field) || values.isNotEmpty {
-                throw ImageXMPError.writeFailed(url, underlying: UnsupportedFieldShape(field: field))
+            // A child-path removal traps, and a merge replaces the whole struct, so children are
+            // collected into one rebuilt struct below.
+            if field.isStructField {
+                if isTouched { structChildren.append((field, isCleared ? nil : values[0])) }
+                continue
             }
 
-            guard values.isNotEmpty, !clearing.contains(field) else { continue }
+            if let mirror = field.imageIOMirror, isTouched {
+                writes.append(.mirroredTag(
+                    namespace: mirror.namespace.uri as CFString, prefix: mirror.namespace.prefix as CFString,
+                    name: mirror.name, value: isCleared ? nil : values[0] as CFString
+                ))
+            }
+
+            guard values.isNotEmpty, !isCleared else { continue }
 
             try writes.append(write(field, values: values, url: url))
 
@@ -133,66 +146,17 @@ public enum ImageXMP {
             }
         }
 
+        writes += structureWrites(structChildren)
+
         try writeTags(
             writes,
-            clearingPaths: XMPField.allCases.filter(clearing.contains).map(\.path),
+            clearingPaths: XMPField.allCases.filter { clearing.contains($0) && !$0.isStructField }.map(\.path),
             replacingPaths: replacingPaths,
             url: url
         )
     }
 
     // MARK: - Private
-
-    /// Two write mechanisms, chosen per field by ``XMPField``:
-    /// - `.scalarProperty` goes through the `CGImageMetadataSetValueMatchingImageProperty` bridge,
-    ///   for a field with a crosswalk.
-    /// - `.namespacedTag` builds a tag under its namespace, at the shape `form` names.
-    enum MetadataWrite {
-        case scalarProperty(dictionary: CFString, property: CFString, value: CFTypeRef)
-        case namespacedTag(namespace: CFString, prefix: CFString, name: String, value: CFTypeRef, form: TagForm)
-    }
-
-    enum TagForm {
-        case scalar
-        /// Set at the `[x-default]`-indexed path. A tag at the bare path of an `rdf:Alt` crashes.
-        case alternateText
-        case array(CGImageMetadataType)
-    }
-
-    struct UnsupportedFieldShape: Error {
-        let field: XMPField
-    }
-
-    private static func write(_ field: XMPField, values: [String], url: URL) throws -> MetadataWrite {
-        let value: CFTypeRef
-
-        if field.shape == .integer {
-            guard let number = Int(values[0]) else {
-                throw ImageXMPError.writeFailed(url, underlying: nil)
-            }
-            value = number as CFNumber
-        } else if field.isArray {
-            value = values as CFArray
-        } else {
-            value = values[0] as CFString
-        }
-
-        if let crosswalk = field.crosswalk {
-            return .scalarProperty(dictionary: kCGImagePropertyIPTCDictionary, property: crosswalk, value: value)
-        }
-
-        let form: TagForm = switch field.shape {
-        case .text, .integer, .bool, .struct: .scalar
-        case .langAlt: .alternateText
-        case .bag: .array(.arrayUnordered)
-        case .seq: .array(.arrayOrdered)
-        }
-
-        return .namespacedTag(
-            namespace: field.namespace as CFString, prefix: field.prefix as CFString,
-            name: field.localName, value: value, form: form
-        )
-    }
 
     /// Builds a metadata object from `writes` and merges it onto the file, preserving the EXIF and
     /// XMP this package does not model. Writes to a temporary file in the same directory as `url`
@@ -260,7 +224,7 @@ public enum ImageXMP {
             }
         }
 
-        if clearingPaths.isEmpty {
+        if clearingPaths.isEmpty, !writes.contains(where: \.startsFromFileMetadata) {
             metadata = CGImageMetadataCreateMutable()
             shouldMerge = true
             restorePNGPacketFields(into: metadata)
@@ -294,36 +258,7 @@ public enum ImageXMP {
             }
         }
 
-        for write in writes {
-            switch write {
-            case let .scalarProperty(dictionary, property, value):
-                guard CGImageMetadataSetValueMatchingImageProperty(metadata, dictionary, property, value) else {
-                    throw ImageXMPError.writeFailed(url, underlying: nil)
-                }
-
-            case let .namespacedTag(namespace, prefix, name, value, form):
-                // The bridge already knows the namespace of any classic property; a tag does not.
-                let prefixString = prefix as String
-                if !registeredPrefixes.contains(prefixString) {
-                    var registrationError: Unmanaged<CFError>?
-                    guard CGImageMetadataRegisterNamespaceForPrefix(metadata, namespace, prefix, &registrationError) else {
-                        throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
-                    }
-                    registeredPrefixes.insert(prefixString)
-                }
-
-                let type: CGImageMetadataType = if case let .array(arrayType) = form { arrayType } else { .default }
-
-                guard let cgTag = CGImageMetadataTagCreate(namespace, prefix, name as CFString, type, value) else {
-                    throw ImageXMPError.writeFailed(url, underlying: nil)
-                }
-
-                let path = if case .alternateText = form { "\(prefixString):\(name)[x-default]" } else { "\(prefixString):\(name)" }
-                guard CGImageMetadataSetTagWithPath(metadata, nil, path as CFString, cgTag) else {
-                    throw ImageXMPError.writeFailed(url, underlying: nil)
-                }
-            }
-        }
+        try apply(writes, to: metadata, registeredPrefixes: &registeredPrefixes, url: url)
 
         let tempURL = url
             .deletingLastPathComponent()

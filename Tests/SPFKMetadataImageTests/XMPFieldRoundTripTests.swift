@@ -20,7 +20,7 @@ struct XMPFieldRoundTripTests {
         case packetlessPNG
     }
 
-    private static func makeFile(_ still: Still) throws -> URL {
+    static func makeFile(_ still: Still) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
 
         if still == .heic {
