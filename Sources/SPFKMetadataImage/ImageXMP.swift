@@ -72,8 +72,8 @@ public enum ImageXMP {
 
     private static let iptcExtensionNamespace = "http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/"
     private static let iptcExtensionPrefix = "Iptc4xmpCore"
-    private static let xmpBasicNamespace = "http://ns.adobe.com/xap/1.0/"
-    private static let xmpBasicPrefix = "xmp"
+    static let xmpBasicNamespace = "http://ns.adobe.com/xap/1.0/"
+    static let xmpBasicPrefix = "xmp"
     private static let photoshopNamespace = "http://ns.adobe.com/photoshop/1.0/"
     private static let photoshopPrefix = "photoshop"
 
@@ -233,7 +233,8 @@ public enum ImageXMP {
     ///
     /// `namespacesToRegister` lets a removal address a namespace the file's own metadata object has
     /// no prefix for. `replacingPaths` are removed like `clearingPaths`, but only when something is
-    /// being cleared: a merging write starts from an empty object and has nothing to remove.
+    /// being cleared: a merging write starts from an empty object and has nothing to remove. A PNG
+    /// with no XMP packet is seeded with one first, which costs a second file write.
     static func writeTags(
         _ writes: [MetadataWrite],
         clearingPaths: [String] = [],
@@ -241,14 +242,38 @@ public enum ImageXMP {
         namespacesToRegister: [(namespace: String, prefix: String)] = [],
         url: URL
     ) throws {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+        guard var source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let uti = CGImageSourceGetType(source)
+        else {
             throw ImageXMPError.sourceCreationFailed(url)
         }
 
-        guard let uti = CGImageSourceGetType(source) else {
-            throw ImageXMPError.sourceCreationFailed(url)
+        if writes.isNotEmpty, try needsPNGPacketSeed(type: uti, url: url) {
+            try seedPNGPacket(source: source, type: uti, url: url)
+
+            guard let seeded = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+                throw ImageXMPError.sourceCreationFailed(url)
+            }
+            source = seeded
         }
 
+        try copyImageSource(
+            source, type: uti, writes: writes, clearingPaths: clearingPaths, replacingPaths: replacingPaths,
+            namespacesToRegister: namespacesToRegister, url: url
+        )
+    }
+
+    /// The body of ``writeTags(_:clearingPaths:replacingPaths:namespacesToRegister:url:)``, without
+    /// the PNG packet seed.
+    static func copyImageSource(
+        _ source: CGImageSource,
+        type uti: CFString,
+        writes: [MetadataWrite],
+        clearingPaths: [String],
+        replacingPaths: [String],
+        namespacesToRegister: [(namespace: String, prefix: String)],
+        url: URL
+    ) throws {
         // Merging only ever adds, so an empty metadata object cannot express a removal. Clearing
         // instead works against a mutable copy of the file's own metadata and writes it back with
         // merging off; everything not explicitly removed survives.
