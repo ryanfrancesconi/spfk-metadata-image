@@ -3,6 +3,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import SPFKBase
 import Testing
 
 @testable import SPFKMetadataImage
@@ -10,7 +11,12 @@ import Testing
 /// Writes over an `rdf:Alt` a HEIC already holds, populated or empty. JPEG never serializes an
 /// empty one, so these need a HEIC fixture.
 struct ImageXMPAlternateTextRewriteTests {
-    private static func makeTestHEIC(named name: String) throws -> URL {
+    /// A HEIC encode can block its thread, so it takes a `BlockingCallLimiter` slot.
+    private static func makeTestHEIC(named name: String) async throws -> URL {
+        try await BlockingCallLimiter.shared.run { try encodeTestHEIC(named: name) }
+    }
+
+    private static func encodeTestHEIC(named name: String) throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID().uuidString).heic")
 
         guard let context = CGContext(
@@ -50,8 +56,8 @@ struct ImageXMPAlternateTextRewriteTests {
         )
     }
 
-    @Test func aTitleIsWrittenOverAnEmptyContainer() throws {
-        let url = try Self.makeTestHEIC(named: "empty-title")
+    @Test func aTitleIsWrittenOverAnEmptyContainer() async throws {
+        let url = try await Self.makeTestHEIC(named: "empty-title")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try Self.writeEmptyAlternateText(property: kCGImagePropertyIPTCObjectName, url: url)
@@ -62,8 +68,8 @@ struct ImageXMPAlternateTextRewriteTests {
         #expect(try ImageXMP.readMetadata(from: url).title == "Real")
     }
 
-    @Test func aDescriptionIsWrittenOverAnEmptyContainer() throws {
-        let url = try Self.makeTestHEIC(named: "empty-description")
+    @Test func aDescriptionIsWrittenOverAnEmptyContainer() async throws {
+        let url = try await Self.makeTestHEIC(named: "empty-description")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try Self.writeEmptyAlternateText(property: kCGImagePropertyIPTCCaptionAbstract, url: url)
@@ -72,8 +78,8 @@ struct ImageXMPAlternateTextRewriteTests {
         #expect(try ImageXMP.readMetadata(from: url).description == "Real")
     }
 
-    @Test func populatedFieldsSurviveBeingWrittenAgain() throws {
-        let url = try Self.makeTestHEIC(named: "populated")
+    @Test func populatedFieldsSurviveBeingWrittenAgain() async throws {
+        let url = try await Self.makeTestHEIC(named: "populated")
         defer { try? FileManager.default.removeItem(at: url) }
 
         var first = XMPMetadata(keywords: ["keep"], title: "Keep", description: "Caption", copyright: "Rights")
@@ -95,8 +101,8 @@ struct ImageXMPAlternateTextRewriteTests {
         #expect(result.city == "Portland")
     }
 
-    @Test func aTitleLeftUnsetSurvivesAWriteThatClearsAnotherField() throws {
-        let url = try Self.makeTestHEIC(named: "untouched")
+    @Test func aTitleLeftUnsetSurvivesAWriteThatClearsAnotherField() async throws {
+        let url = try await Self.makeTestHEIC(named: "untouched")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(title: "Keep"), url: url)
