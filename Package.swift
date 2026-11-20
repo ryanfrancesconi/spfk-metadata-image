@@ -27,6 +27,7 @@ let package = Package(
             name: "SPFKMetadataImageTests",
             dependencies: [
                 "SPFKMetadataImage",
+                .product(name: "SPFKBase", package: "spfk-base"),
                 .product(name: "SPFKTesting", package: "spfk-testing"),
             ]
         ),
