@@ -7,60 +7,24 @@ import Testing
 @testable import SPFKMetadataImage
 
 struct ImageXMPTests {
-    /// WebP reads without an encoder; SVG is a `public.image` ImageIO has no reader for.
+    /// WebP is writable without being encodable: `writableContentTypes` also decides re-encodes,
+    /// which a WebP cannot take. SVG is a `public.image` ImageIO has no reader for.
     @Test func readabilityIsSeparateFromWritability() {
         let webP = URL(fileURLWithPath: "/tmp/a.webp")
         let svg = URL(fileURLWithPath: "/tmp/a.svg")
 
         #expect(ImageXMP.canRead(url: URL(fileURLWithPath: "/tmp/a.JPG")))
         #expect(ImageXMP.canRead(url: webP))
-        #expect(ImageXMP.canWrite(url: webP) == false)
+        #expect(ImageXMP.canWrite(url: webP))
+        #expect(ImageXMP.writableContentTypes.contains("org.webmproject.webp") == false)
         #expect(ImageXMP.canRead(url: svg) == false)
-    }
-
-    /// Generates a small synthetic JPEG with a real EXIF field set (TIFF Make), so tests can
-    /// verify keyword writes don't clobber other existing metadata. Pure metadata I/O doesn't
-    /// need real photo content to test correctly, unlike ML-classification-style testing.
-    private static func makeTestJPEG(named name: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID().uuidString).jpg")
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        let context = CGContext(
-            data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        )!
-        context.setFillColor(CGColor(red: 0.4, green: 0.6, blue: 0.8, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
-
-        guard let cgImage = context.makeImage() else {
-            throw TestError.imageCreationFailed
-        }
-
-        guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else {
-            throw TestError.imageCreationFailed
-        }
-
-        let properties: [CFString: Any] = [
-            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "SPFKTestFixture"],
-        ]
-        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
-
-        guard CGImageDestinationFinalize(destination) else {
-            throw TestError.imageCreationFailed
-        }
-
-        return url
-    }
-
-    private enum TestError: Error {
-        case imageCreationFailed
     }
 
     /// A file that can't be read is not a file without metadata: a caller writes every field it
     /// read back as empty, removing them.
-    @Test
-    func anUnreadableFileThrowsRatherThanReadingEmpty() throws {
-        let url = try Self.makeTestJPEG(named: "unreadable")
+    @Test(arguments: TestImageFormat.allCases)
+    func anUnreadableFileThrowsRatherThanReadingEmpty(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "unreadable")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
@@ -71,17 +35,17 @@ struct ImageXMPTests {
         }
     }
 
-    @Test
-    func freshFileHasNoKeywords() throws {
-        let url = try Self.makeTestJPEG(named: "fresh")
+    @Test(arguments: TestImageFormat.allCases)
+    func freshFileHasNoKeywords(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "fresh")
         defer { try? FileManager.default.removeItem(at: url) }
 
         #expect(try ImageXMP.keywords(from: url) == [])
     }
 
-    @Test
-    func writeThenReadRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "roundtrip")
+    @Test(arguments: TestImageFormat.allCases)
+    func writeThenReadRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "roundtrip")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let written = ["mountains", "california", "sunset"]
@@ -91,9 +55,9 @@ struct ImageXMPTests {
         #expect(Set(read) == Set(written))
     }
 
-    @Test
-    func replacingKeywordsOverwritesRatherThanAppends() throws {
-        let url = try Self.makeTestJPEG(named: "replace")
+    @Test(arguments: TestImageFormat.allCases)
+    func replacingKeywordsOverwritesRatherThanAppends(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "replace")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.setKeywords(["first", "second"], url: url)
@@ -103,9 +67,9 @@ struct ImageXMPTests {
         #expect(read == ["third"])
     }
 
-    @Test
-    func writingKeywordsPreservesExistingEXIFData() throws {
-        let url = try Self.makeTestJPEG(named: "preserve-exif")
+    @Test(arguments: TestImageFormat.allCases)
+    func writingKeywordsPreservesExistingEXIFData(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "preserve-exif")
         defer { try? FileManager.default.removeItem(at: url) }
 
         guard let sourceBefore = CGImageSourceCreateWithURL(url as CFURL, nil),
@@ -137,18 +101,18 @@ struct ImageXMPTests {
         }
     }
 
-    @Test
-    func freshFileHasEmptyMetadata() throws {
-        let url = try Self.makeTestJPEG(named: "fresh-metadata")
+    @Test(arguments: TestImageFormat.allCases)
+    func freshFileHasEmptyMetadata(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "fresh-metadata")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let metadata = try ImageXMP.readMetadata(from: url)
         #expect(metadata.creators == [])
     }
 
-    @Test
-    func writeAndReadFullMetadataRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "full-metadata")
+    @Test(arguments: TestImageFormat.allCases)
+    func writeAndReadFullMetadataRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "full-metadata")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let written = XMPMetadata(
@@ -162,9 +126,9 @@ struct ImageXMPTests {
         #expect(read.creators == written.creators)
     }
 
-    @Test
-    func multipleCreatorsPreserveOrder() throws {
-        let url = try Self.makeTestJPEG(named: "multi-creator")
+    @Test(arguments: TestImageFormat.allCases)
+    func multipleCreatorsPreserveOrder(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "multi-creator")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let creators = ["First Photographer", "Second Photographer", "Third Photographer"]
@@ -174,9 +138,9 @@ struct ImageXMPTests {
         #expect(read.creators == creators)
     }
 
-    @Test
-    func writingMetadataDoesNotClobberUnspecifiedFields() throws {
-        let url = try Self.makeTestJPEG(named: "no-clobber")
+    @Test(arguments: TestImageFormat.allCases)
+    func writingMetadataDoesNotClobberUnspecifiedFields(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "no-clobber")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.setKeywords(["original-keyword"], url: url)
@@ -191,9 +155,9 @@ struct ImageXMPTests {
     /// real HEIC (`-[Swift.__StringStorage count]: unrecognized selector`) while passing on
     /// synthetic JPEGs; the write path uses `CGImageMetadataSetValueMatchingImageProperty` instead.
     /// See `titleAndDescriptionRoundTrip` for the fields actually exposed.
-    @Test
-    func realFileWritesDoNotCrash() throws {
-        let url = try Self.makeTestJPEG(named: "real-file-safety")
+    @Test(arguments: TestImageFormat.allCases)
+    func realFileWritesDoNotCrash(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "real-file-safety")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(keywords: ["a"], creators: ["b"]), url: url)
@@ -202,9 +166,9 @@ struct ImageXMPTests {
         #expect(read.creators == ["b"])
     }
 
-    @Test
-    func titleAndDescriptionRoundTrip() throws {
-        let url = try Self.makeTestJPEG(named: "title-description")
+    @Test(arguments: TestImageFormat.allCases)
+    func titleAndDescriptionRoundTrip(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "title-description")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let written = XMPMetadata(title: "A Test Title", description: "A test description.")
@@ -215,9 +179,9 @@ struct ImageXMPTests {
         #expect(read.description == written.description)
     }
 
-    @Test
-    func freshFileHasNilTitleAndDescription() throws {
-        let url = try Self.makeTestJPEG(named: "fresh-title-description")
+    @Test(arguments: TestImageFormat.allCases)
+    func freshFileHasNilTitleAndDescription(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "fresh-title-description")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let metadata = try ImageXMP.readMetadata(from: url)
@@ -225,9 +189,9 @@ struct ImageXMPTests {
         #expect(metadata.description == nil)
     }
 
-    @Test
-    func titleAndDescriptionCoexistWithKeywordsAndCreators() throws {
-        let url = try Self.makeTestJPEG(named: "coexist")
+    @Test(arguments: TestImageFormat.allCases)
+    func titleAndDescriptionCoexistWithKeywordsAndCreators(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "coexist")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.setKeywords(["mountains"], url: url)
@@ -243,9 +207,9 @@ struct ImageXMPTests {
         #expect(read.description == "A Description")
     }
 
-    @Test
-    func copyrightRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "copyright")
+    @Test(arguments: TestImageFormat.allCases)
+    func copyrightRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "copyright")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(copyright: "© 2026 Test"), url: url)
@@ -253,9 +217,9 @@ struct ImageXMPTests {
         #expect(read.copyright == "© 2026 Test")
     }
 
-    @Test
-    func locationFieldsRoundTrip() throws {
-        let url = try Self.makeTestJPEG(named: "location")
+    @Test(arguments: TestImageFormat.allCases)
+    func locationFieldsRoundTrip(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "location")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(city: "Hood River", state: "Oregon", country: "USA"), url: url)
@@ -265,9 +229,9 @@ struct ImageXMPTests {
         #expect(read.country == "USA")
     }
 
-    @Test
-    func subLocationRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "sub-location")
+    @Test(arguments: TestImageFormat.allCases)
+    func subLocationRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "sub-location")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(city: "Hood River", subLocation: "East Fork Sand"), url: url)
@@ -276,9 +240,9 @@ struct ImageXMPTests {
         #expect(read.subLocation == "East Fork Sand")
     }
 
-    @Test
-    func ratingRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "rating")
+    @Test(arguments: TestImageFormat.allCases)
+    func ratingRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "rating")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(rating: 4), url: url)
@@ -286,9 +250,9 @@ struct ImageXMPTests {
         #expect(read.rating == 4)
     }
 
-    @Test
-    func labelRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "label")
+    @Test(arguments: TestImageFormat.allCases)
+    func labelRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "label")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(label: "Green"), url: url)
@@ -296,9 +260,9 @@ struct ImageXMPTests {
         #expect(read.label == "Green")
     }
 
-    @Test
-    func labelColorRoundTrips() throws {
-        let url = try Self.makeTestJPEG(named: "label-color")
+    @Test(arguments: TestImageFormat.allCases)
+    func labelColorRoundTrips(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "label-color")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(XMPMetadata(label: "Orange", labelColor: "#F37500"), url: url)
@@ -307,9 +271,9 @@ struct ImageXMPTests {
         #expect(read.labelColor == "#F37500")
     }
 
-    @Test
-    func accessibilityFieldsRoundTrip() throws {
-        let url = try Self.makeTestJPEG(named: "accessibility")
+    @Test(arguments: TestImageFormat.allCases)
+    func accessibilityFieldsRoundTrip(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "accessibility")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(
@@ -321,9 +285,9 @@ struct ImageXMPTests {
         #expect(read.accessibilityDescription == "Extended accessibility description")
     }
 
-    @Test
-    func newFieldsDoNotClobberExistingFields() throws {
-        let url = try Self.makeTestJPEG(named: "new-fields-no-clobber")
+    @Test(arguments: TestImageFormat.allCases)
+    func newFieldsDoNotClobberExistingFields(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "new-fields-no-clobber")
         defer { try? FileManager.default.removeItem(at: url) }
 
         try ImageXMP.writeMetadata(
@@ -346,9 +310,9 @@ struct ImageXMPTests {
         #expect(read.label == "Red")
     }
 
-    @Test
-    func freshFileHasNilForAllNewFields() throws {
-        let url = try Self.makeTestJPEG(named: "fresh-new-fields")
+    @Test(arguments: TestImageFormat.allCases)
+    func freshFileHasNilForAllNewFields(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "fresh-new-fields")
         defer { try? FileManager.default.removeItem(at: url) }
 
         let metadata = try ImageXMP.readMetadata(from: url)

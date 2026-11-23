@@ -35,23 +35,24 @@ public enum ImageXMP {
 
     // MARK: - Write capability
 
-    /// The content types ImageIO can write, which is a strict subset of what it can read.
+    /// The content types ImageIO can encode, which is a strict subset of what it can read. WebP is
+    /// not among them: ``canWrite(url:)`` adds it, since its metadata is written as a chunk splice.
     ///
     /// Read from `CGImageDestinationCopyTypeIdentifiers()` rather than transcribed: the set is the
     /// system's and moves between OS versions. 22 writable against 62 readable on macOS 26.5.
     public static let writableContentTypes: Set<String> =
         Set(CGImageDestinationCopyTypeIdentifiers() as? [String] ?? [])
 
-    /// Whether ImageIO can write metadata back to a file with this path extension.
+    /// Whether metadata can be written back to a file with this path extension: a type ImageIO
+    /// encodes, or WebP, whose `XMP ` and `EXIF` chunks are replaced without re-encoding.
     ///
-    /// **Readable does not imply writable** - WebP reads in full and has no encoder at all, so
-    /// every write to one fails. ``writeMetadata(_:clearing:url:)`` throws for exactly the files
-    /// this refuses. Answered by extension rather than by opening the file, since it is asked per
-    /// row and per field.
+    /// ``writeMetadata(_:clearing:url:)`` throws for exactly the files this refuses. Answered by
+    /// extension rather than by opening the file, since it is asked per row and per field; the
+    /// write itself routes by the file's content.
     public static func canWrite(url: URL) -> Bool {
         guard let type = UTType(filenameExtension: url.pathExtension) else { return false }
 
-        return writableContentTypes.contains(type.identifier)
+        return writableContentTypes.contains(type.identifier) || type.identifier == webPContentType
     }
 
     /// The content types ImageIO can read.
@@ -205,6 +206,14 @@ public enum ImageXMP {
         namespacesToRegister: [(namespace: String, prefix: String)],
         url: URL
     ) throws {
+        if (uti as String) == webPContentType {
+            try writeWebP(
+                writes: writes, clearingPaths: clearingPaths, replacingPaths: replacingPaths,
+                namespacesToRegister: namespacesToRegister, url: url
+            )
+            return
+        }
+
         // Merging only ever adds, so an empty metadata object cannot express a removal. Clearing
         // instead works against a mutable copy of the file's own metadata and writes it back with
         // merging off; everything not explicitly removed survives.
@@ -240,15 +249,7 @@ public enum ImageXMP {
 
             shouldMerge = false
 
-            for (namespace, prefix) in namespacesToRegister {
-                var registrationError: Unmanaged<CFError>?
-                guard CGImageMetadataRegisterNamespaceForPrefix(
-                    metadata, namespace as CFString, prefix as CFString, &registrationError
-                ) else {
-                    throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
-                }
-                registeredPrefixes.insert(prefix)
-            }
+            try registerNamespaces(namespacesToRegister, on: metadata, registeredPrefixes: &registeredPrefixes, url: url)
 
             restorePNGPacketFields(into: metadata)
 
@@ -260,25 +261,50 @@ public enum ImageXMP {
 
         try apply(writes, to: metadata, registeredPrefixes: &registeredPrefixes, url: url)
 
+        try replaceAtomically(url) { tempURL in
+            guard let destination = CGImageDestinationCreateWithURL(tempURL as CFURL, uti, 1, nil) else {
+                throw ImageXMPError.destinationCreationFailed(url)
+            }
+
+            let options: [CFString: Any] = [
+                kCGImageDestinationMetadata: metadata,
+                kCGImageDestinationMergeMetadata: shouldMerge,
+            ]
+
+            var copyError: Unmanaged<CFError>?
+            guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, &copyError) else {
+                throw ImageXMPError.writeFailed(url, underlying: copyError?.takeUnretainedValue())
+            }
+        }
+    }
+
+    static func registerNamespaces(
+        _ namespaces: [(namespace: String, prefix: String)],
+        on metadata: CGMutableImageMetadata,
+        registeredPrefixes: inout Set<String>,
+        url: URL
+    ) throws {
+        for (namespace, prefix) in namespaces {
+            var registrationError: Unmanaged<CFError>?
+            guard CGImageMetadataRegisterNamespaceForPrefix(
+                metadata, namespace as CFString, prefix as CFString, &registrationError
+            ) else {
+                throw ImageXMPError.writeFailed(url, underlying: registrationError?.takeUnretainedValue())
+            }
+            registeredPrefixes.insert(prefix)
+        }
+    }
+
+    /// Runs `write` against a temporary file beside `url`, then swaps it in, so a failure
+    /// mid-write cannot corrupt the original.
+    static func replaceAtomically(_ url: URL, write: (URL) throws -> Void) throws {
         let tempURL = url
             .deletingLastPathComponent()
             .appendingPathComponent(".\(UUID().uuidString)-\(url.lastPathComponent)")
 
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        guard let destination = CGImageDestinationCreateWithURL(tempURL as CFURL, uti, 1, nil) else {
-            throw ImageXMPError.destinationCreationFailed(url)
-        }
-
-        let options: [CFString: Any] = [
-            kCGImageDestinationMetadata: metadata,
-            kCGImageDestinationMergeMetadata: shouldMerge,
-        ]
-
-        var copyError: Unmanaged<CFError>?
-        guard CGImageDestinationCopyImageSource(destination, source, options as CFDictionary, &copyError) else {
-            throw ImageXMPError.writeFailed(url, underlying: copyError?.takeUnretainedValue())
-        }
+        try write(tempURL)
 
         do {
             _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)

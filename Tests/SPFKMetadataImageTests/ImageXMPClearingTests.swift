@@ -12,46 +12,11 @@ import Testing
 /// (hand-built array tags, the classic-property bridge, namespaced tags) each store their value
 /// differently, so a clear that works for one proves nothing about the others.
 struct ImageXMPClearingTests {
-    private static func makeTestJPEG(named name: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID().uuidString).jpg")
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: nil, width: 64, height: 64, bitsPerComponent: 8, bytesPerRow: 0,
-            space: colorSpace, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ) else {
-            throw TestError.imageCreationFailed
-        }
-
-        context.setFillColor(CGColor(red: 0.4, green: 0.6, blue: 0.8, alpha: 1))
-        context.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
-
-        guard let cgImage = context.makeImage(),
-              let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil)
-        else {
-            throw TestError.imageCreationFailed
-        }
-
-        let properties: [CFString: Any] = [
-            kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFMake: "SPFKTestFixture"],
-        ]
-        CGImageDestinationAddImage(destination, cgImage, properties as CFDictionary)
-
-        guard CGImageDestinationFinalize(destination) else {
-            throw TestError.imageCreationFailed
-        }
-
-        return url
-    }
-
-    private enum TestError: Error {
-        case imageCreationFailed
-    }
-
     // MARK: - Array fields (hand-built dc: tags)
 
-    @Test func clearingKeywordsEmptiesThem() throws {
-        let url = try Self.makeTestJPEG(named: "clear-keywords")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingKeywordsEmptiesThem(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-keywords")
 
         try ImageXMP.writeMetadata(XMPMetadata(keywords: ["beach", "sunset"]), url: url)
         #expect(try ImageXMP.readMetadata(from: url).keywords == ["beach", "sunset"])
@@ -60,8 +25,9 @@ struct ImageXMPClearingTests {
         #expect(try ImageXMP.readMetadata(from: url).keywords.isEmpty)
     }
 
-    @Test func clearingCreatorsEmptiesThem() throws {
-        let url = try Self.makeTestJPEG(named: "clear-creators")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingCreatorsEmptiesThem(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-creators")
 
         try ImageXMP.writeMetadata(XMPMetadata(creators: ["Ansel"]), url: url)
         #expect(try ImageXMP.readMetadata(from: url).creators == ["Ansel"])
@@ -72,8 +38,9 @@ struct ImageXMPClearingTests {
 
     // MARK: - Alternate-text fields via the classic-property bridge
 
-    @Test func clearingTitleEmptiesIt() throws {
-        let url = try Self.makeTestJPEG(named: "clear-title")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingTitleEmptiesIt(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-title")
 
         try ImageXMP.writeMetadata(XMPMetadata(title: "Original"), url: url)
         #expect(try ImageXMP.readMetadata(from: url).title == "Original")
@@ -82,8 +49,9 @@ struct ImageXMPClearingTests {
         #expect(try ImageXMP.readMetadata(from: url).title == nil)
     }
 
-    @Test func clearingDescriptionAndCopyrightEmptiesThem() throws {
-        let url = try Self.makeTestJPEG(named: "clear-desc")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingDescriptionAndCopyrightEmptiesThem(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-desc")
 
         try ImageXMP.writeMetadata(
             XMPMetadata(description: "A description", copyright: "© 2026"),
@@ -101,8 +69,9 @@ struct ImageXMPClearingTests {
 
     // MARK: - Scalar fields
 
-    @Test func clearingLocationScalarsEmptiesThem() throws {
-        let url = try Self.makeTestJPEG(named: "clear-location")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingLocationScalarsEmptiesThem(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-location")
 
         try ImageXMP.writeMetadata(
             XMPMetadata(city: "Portland", state: "Oregon", country: "USA"),
@@ -119,8 +88,9 @@ struct ImageXMPClearingTests {
 
     /// `xmp:Label` is written as a namespaced tag rather than through the bridge, so it exercises
     /// the third write mechanism.
-    @Test func clearingLabelEmptiesIt() throws {
-        let url = try Self.makeTestJPEG(named: "clear-label")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingLabelEmptiesIt(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-label")
 
         try ImageXMP.writeMetadata(XMPMetadata(label: "Select"), url: url)
         #expect(try ImageXMP.readMetadata(from: url).label == "Select")
@@ -129,8 +99,9 @@ struct ImageXMPClearingTests {
         #expect(try ImageXMP.readMetadata(from: url).label == nil)
     }
 
-    @Test func clearingRatingEmptiesIt() throws {
-        let url = try Self.makeTestJPEG(named: "clear-rating")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingRatingEmptiesIt(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-rating")
 
         try ImageXMP.writeMetadata(XMPMetadata(rating: 4), url: url)
         #expect(try ImageXMP.readMetadata(from: url).rating == 4)
@@ -143,8 +114,9 @@ struct ImageXMPClearingTests {
 
     /// The whole reason clearing is a parameter rather than a replace-everything write: it must
     /// not touch fields the caller did not name.
-    @Test func clearingOneFieldLeavesTheOthersIntact() throws {
-        let url = try Self.makeTestJPEG(named: "clear-surgical")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingOneFieldLeavesTheOthersIntact(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-surgical")
 
         try ImageXMP.writeMetadata(
             XMPMetadata(keywords: ["keep"], title: "Keep", city: "Portland"),
@@ -161,8 +133,9 @@ struct ImageXMPClearingTests {
 
     /// Clearing writes the file wholesale rather than merging, so non-XMP metadata has to survive
     /// that path too -- the fixture's EXIF/TIFF Make is the canary.
-    @Test func clearingPreservesUnrelatedNonXMPMetadata() throws {
-        let url = try Self.makeTestJPEG(named: "clear-preserves-exif")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingPreservesUnrelatedNonXMPMetadata(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-preserves-exif")
 
         try ImageXMP.writeMetadata(XMPMetadata(keywords: ["gone"]), url: url)
         try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.keywords], url: url)
@@ -180,8 +153,9 @@ struct ImageXMPClearingTests {
     /// IPTC side survived a clear, this package would report the field empty while every other
     /// tool (Lightroom, Bridge, exiftool) still showed the old value. Read back through
     /// `CGImageSourceCopyPropertiesAtIndex`, a different path than the one under test.
-    @Test func clearingAlsoEmptiesTheClassicIPTCValue() throws {
-        let url = try Self.makeTestJPEG(named: "clear-iptc-crosscheck")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingAlsoEmptiesTheClassicIPTCValue(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-iptc-crosscheck")
 
         try ImageXMP.writeMetadata(
             XMPMetadata(title: "Original", description: "Caption", city: "Portland"),
@@ -211,8 +185,9 @@ struct ImageXMPClearingTests {
         #expect(cleared[kCGImagePropertyIPTCCity] == nil)
     }
 
-    @Test func clearingAnAlreadyEmptyFieldIsNotAnError() throws {
-        let url = try Self.makeTestJPEG(named: "clear-empty")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingAnAlreadyEmptyFieldIsNotAnError(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-empty")
 
         try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.title, .keywords], url: url)
 
@@ -221,8 +196,9 @@ struct ImageXMPClearingTests {
 
     /// Clearing wins over a value supplied in the same call, so a caller cannot ask for both and
     /// get an order-dependent answer.
-    @Test func clearingTakesPrecedenceOverAValueInTheSameWrite() throws {
-        let url = try Self.makeTestJPEG(named: "clear-precedence")
+    @Test(arguments: TestImageFormat.allCases)
+    func clearingTakesPrecedenceOverAValueInTheSameWrite(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-precedence")
 
         try ImageXMP.writeMetadata(XMPMetadata(title: "Original"), url: url)
         try ImageXMP.writeMetadata(XMPMetadata(title: "Ignored"), clearing: [.title], url: url)
@@ -232,8 +208,9 @@ struct ImageXMPClearingTests {
 
     /// Set, clear, set again -- a cleared field has to remain writable, not be poisoned by the
     /// removal.
-    @Test func aClearedFieldCanBeSetAgain() throws {
-        let url = try Self.makeTestJPEG(named: "clear-then-set")
+    @Test(arguments: TestImageFormat.allCases)
+    func aClearedFieldCanBeSetAgain(format: TestImageFormat) throws {
+        let url = try format.makeImage(named: "clear-then-set")
 
         try ImageXMP.writeMetadata(XMPMetadata(keywords: ["first"]), url: url)
         try ImageXMP.writeMetadata(XMPMetadata(), clearing: [.keywords], url: url)
