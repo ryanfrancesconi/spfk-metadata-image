@@ -17,15 +17,42 @@ extension ImageXMP {
     /// ``copyImageSource(_:type:writes:clearingPaths:replacingPaths:namespacesToRegister:url:)`` for a
     /// WebP, which ImageIO cannot encode: the edit is applied to the file's own `XMP ` packet and
     /// spliced back as a chunk, leaving the image data untouched.
-    ///
-    /// Starts from the packet rather than ImageIO's view of the file, which also carries values
-    /// synthesized from the EXIF chunk. A packet that does not parse throws rather than being replaced.
     static func writeWebP(
         writes: [MetadataWrite],
         clearingPaths: [String],
         replacingPaths: [String],
         namespacesToRegister: [(namespace: String, prefix: String)],
         url: URL
+    ) throws {
+        try rewriteWebPPacket(url: url) { original in
+            guard let metadata = original.map({ CGImageMetadataCreateMutableCopy($0) }) ?? CGImageMetadataCreateMutable() else {
+                throw ImageXMPError.writeFailed(url, underlying: nil)
+            }
+
+            var registeredPrefixes: Set<String> = []
+            try registerNamespaces(namespacesToRegister, on: metadata, registeredPrefixes: &registeredPrefixes, url: url)
+
+            let removedPaths = clearingPaths + replacingPaths
+            for path in removedPaths {
+                CGImageMetadataRemoveTagWithPath(metadata, nil, path as CFString)
+            }
+
+            try apply(writes, to: metadata, registeredPrefixes: &registeredPrefixes, url: url)
+
+            return (metadata, removedPaths)
+        }
+    }
+
+    /// Replaces a WebP's `XMP ` chunk with what `edit` makes of its current packet, and removes the
+    /// EXIF text tag of each ``webPEXIFCrosswalk`` field the edit touched.
+    ///
+    /// `edit` receives the chunk's packet, `nil` when there is none, never ImageIO's view of the file,
+    /// which also carries values synthesized from the EXIF. It returns the new packet and the paths
+    /// it removed; a field counts as touched when its path was removed or its value changed. A packet
+    /// that does not parse throws rather than being replaced.
+    static func rewriteWebPPacket(
+        url: URL,
+        edit: (CGImageMetadata?) throws -> (metadata: CGImageMetadata, removedPaths: [String])
     ) throws {
         let container: WebPContainer
         do {
@@ -35,20 +62,7 @@ extension ImageXMP {
         }
 
         let original = try container.xmpPacket.map { try packetMetadata($0, url: url) }
-
-        guard let metadata = original.map({ CGImageMetadataCreateMutableCopy($0) }) ?? CGImageMetadataCreateMutable() else {
-            throw ImageXMPError.writeFailed(url, underlying: nil)
-        }
-
-        var registeredPrefixes: Set<String> = []
-        try registerNamespaces(namespacesToRegister, on: metadata, registeredPrefixes: &registeredPrefixes, url: url)
-
-        let removedPaths = clearingPaths + replacingPaths
-        for path in removedPaths {
-            CGImageMetadataRemoveTagWithPath(metadata, nil, path as CFString)
-        }
-
-        try apply(writes, to: metadata, registeredPrefixes: &registeredPrefixes, url: url)
+        let (metadata, removedPaths) = try edit(original)
 
         let touchedTags = webPEXIFCrosswalk.filter { entry in
             removedPaths.contains(entry.field.path)
