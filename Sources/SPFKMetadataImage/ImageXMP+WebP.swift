@@ -76,22 +76,29 @@ extension ImageXMP {
     /// A packet parsed on its own. `CGImageMetadataCreateFromXMPData` returns `nil` for one whose
     /// attributes are single-quoted, as exiftool writes them, though ImageIO reads the same packet
     /// from a file; such a packet is re-serialized through `XMLDocument` and parsed again.
-    static func packetMetadata(_ packet: Data, url: URL) throws -> CGImageMetadata {
+    ///
+    /// - Returns: `nil` when ImageIO cannot parse even the re-serialized packet.
+    /// - Throws: the XML parser's error for a packet that is not XML.
+    static func parsePacket(_ packet: Data) throws -> CGImageMetadata? {
         if let metadata = CGImageMetadataCreateFromXMPData(packet as CFData) { return metadata }
 
-        let root: XMLElement?
+        guard let root = try XMLDocument(data: packet, options: [.nodePreserveWhitespace]).rootElement() else {
+            return nil
+        }
+
+        return CGImageMetadataCreateFromXMPData(Data(root.xmlString(options: [.nodePreserveWhitespace]).utf8) as CFData)
+    }
+
+    /// ``parsePacket(_:)``, with any failure thrown as a write failure on `url`.
+    static func packetMetadata(_ packet: Data, url: URL) throws -> CGImageMetadata {
+        let metadata: CGImageMetadata?
         do {
-            root = try XMLDocument(data: packet, options: [.nodePreserveWhitespace]).rootElement()
+            metadata = try parsePacket(packet)
         } catch {
             throw ImageXMPError.writeFailed(url, underlying: error)
         }
 
-        guard let root,
-              let metadata = CGImageMetadataCreateFromXMPData(Data(root.xmlString(options: [.nodePreserveWhitespace]).utf8) as CFData)
-        else {
-            throw ImageXMPError.writeFailed(url, underlying: nil)
-        }
-
+        guard let metadata else { throw ImageXMPError.writeFailed(url, underlying: nil) }
         return metadata
     }
 

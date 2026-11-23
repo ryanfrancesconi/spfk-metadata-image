@@ -24,15 +24,16 @@ extension ImageXMP {
         return String(data: data as Data, encoding: .utf8)
     }
 
-    /// The fields this package supports, read from XMP text rather than a file; `nil` when ImageIO
-    /// cannot parse it.
+    /// The fields this package supports, read from XMP text rather than a file; `nil` when it does
+    /// not parse. Single-quoted attributes are accepted, as ``parsePacket(_:)`` describes.
     public static func readMetadata(fromPacket packet: String) -> XMPMetadata? {
-        guard let data = packet.data(using: .utf8),
-              let metadata = CGImageMetadataCreateFromXMPData(data as CFData)
-        else {
+        let metadata: CGImageMetadata?
+        do {
+            metadata = try parsePacket(Data(packet.utf8))
+        } catch {
             return nil
         }
 
-        return readMetadata(from: metadata)
+        return metadata.map { readMetadata(from: $0) }
     }
 }
