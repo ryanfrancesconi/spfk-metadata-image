@@ -47,6 +47,10 @@ public enum XMPField: String, Sendable, CaseIterable {
     case personsShown
     case organizationsShown
     case genre
+    /// Lightroom Classic's pick flag: -1, 0 or 1.
+    case pick
+    /// Dynamic Media's good-take flag, which Lightroom writes beside ``pick``.
+    case good
 
     /// The XMP value type a field holds.
     public enum Shape: Hashable, Sendable {
@@ -125,6 +129,8 @@ public enum XMPField: String, Sendable, CaseIterable {
         case .personsShown: Entry(namespace: .iptcExtension, name: "PersonInImage", shape: .bag)
         case .organizationsShown: Entry(namespace: .iptcExtension, name: "OrganisationInImageName", shape: .bag)
         case .genre: Entry(namespace: .iptcCore, name: "IntellectualGenre", shape: .text)
+        case .pick: Entry(namespace: .dynamicMedia, name: "pick", shape: .integer)
+        case .good: Entry(namespace: .dynamicMedia, name: "good", shape: .bool)
         }
     }
 
@@ -197,7 +203,8 @@ public enum XMPField: String, Sendable, CaseIterable {
     }
 }
 
-/// The namespaces ``XMPField`` uses, with ImageIO's own URI and prefix for each.
+/// The namespaces ``XMPField`` uses, with ImageIO's own URI and prefix for each. ImageIO declares
+/// no constant for Dynamic Media, so its URI and prefix are Adobe's.
 enum XMPNamespace {
     case dublinCore
     case photoshop
@@ -205,6 +212,7 @@ enum XMPNamespace {
     case xmpRights
     case iptcCore
     case iptcExtension
+    case dynamicMedia
 
     var uri: String {
         switch self {
@@ -214,6 +222,7 @@ enum XMPNamespace {
         case .xmpRights: kCGImageMetadataNamespaceXMPRights as String
         case .iptcCore: kCGImageMetadataNamespaceIPTCCore as String
         case .iptcExtension: kCGImageMetadataNamespaceIPTCExtension as String
+        case .dynamicMedia: "http://ns.adobe.com/xmp/1.0/DynamicMedia/"
         }
     }
 
@@ -225,6 +234,7 @@ enum XMPNamespace {
         case .xmpRights: kCGImageMetadataPrefixXMPRights as String
         case .iptcCore: kCGImageMetadataPrefixIPTCCore as String
         case .iptcExtension: kCGImageMetadataPrefixIPTCExtension as String
+        case .dynamicMedia: "xmpDM"
         }
     }
 }
